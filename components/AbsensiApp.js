@@ -1,33 +1,28 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
-import { doc } from 'firebase/firestore';
-import { Clock, CheckCircle2, LogOut, History, Trash2, Edit3, Wallet, Cloud, Download, AlertTriangle, ChevronRight, Check, Calendar } from 'lucide-react';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
+import { Clock, CheckCircle2, LogOut, History, Trash2, Edit3, Wallet, Cloud, Download, AlertTriangle, Check } from 'lucide-react';
 
-// Inisialisasi Firebase
+/* ================= FIREBASE SETUP (SMART INITIALIZATION) ================= */
 let app, auth, db;
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'avi-absensi-v1';
 
+// Memastikan Firebase hanya jalan di browser dan config tersedia
 if (typeof window !== 'undefined') {
-  const firebaseConfig = {
-    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
-  };
-
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
+  try {
+    const firebaseConfig = JSON.parse(__firebase_config);
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+  } catch (e) {
+    console.error("Firebase Initialization Error:", e);
+  }
 }
 
-const appId = 'avi-absensi-v1';
-
 const App = () => {
-  const [user, setUser] = useState(null);
-  const [dbUser, setDbUser] = useState(null);
+  const [user, setUser] = useState(null); // Auth State (Firebase)
+  const [appUser, setAppUser] = useState(null); // App State (Pegawai/Admin)
   const [loginInput, setLoginInput] = useState({ username: '', password: '' });
   const [currentPage, setCurrentPage] = useState('absen');
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -35,6 +30,7 @@ const App = () => {
   const [logs, setLogs] = useState([]);
   const [statusMessage, setStatusMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
 
   // Filter States
   const [activeHistoryTab, setActiveHistoryTab] = useState('Umum');
@@ -49,12 +45,8 @@ const App = () => {
   const daftarBulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
   const pegawaiAkses = {
-    "Abub": ["Umum"],
-    "Rendy": ["Umum"],
-    "Dedi": ["Umum"],
-    "Vebi": ["Live"],
-    "Silvi": ["Umum", "Live"],
-    "Aisyah": ["Umum", "Live"]
+    "Abub": ["Umum"], "Rendy": ["Umum"], "Dedi": ["Umum"],
+    "Vebi": ["Live"], "Silvi": ["Umum", "Live"], "Aisyah": ["Umum", "Live"]
   };
 
   const daftarPegawai = {
@@ -62,39 +54,50 @@ const App = () => {
     Live: ["Silvi", "Aisyah", "Vebi"]
   };
 
-  // Auth Initialization
+  /* ================= 1. AUTH LOGIC (FOLLOWING YOUR WORKING PATTERN) ================= */
   useEffect(() => {
-    if (typeof window === 'undefined' || !auth) return;
-    
+    if (typeof window === 'undefined' || !auth) {
+      setIsInitializing(false);
+      return;
+    }
+
     const initAuth = async () => {
       try {
-        await signInAnonymously(auth);
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
       } catch (err) {
-        console.error("Auth error", err);
+        console.error("Auth error:", err);
+      } finally {
+        setIsInitializing(false);
       }
     };
-    
+
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => setDbUser(u));
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
     return () => unsubscribe();
   }, []);
 
-  // Sync Data
+  /* ================= 2. DATA SYNC (RULE 1 & 2) ================= */
   useEffect(() => {
-    if (!dbUser || !db) return;
-    
+    if (!user || !db) return;
+
     const qLogs = collection(db, 'artifacts', appId, 'public', 'data', 'absensi_logs');
     const unsubLogs = onSnapshot(qLogs, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setLogs(data.sort((a, b) => b.timestamp - a.timestamp));
+      // Sort in memory to avoid index requirements
+      setLogs(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
     }, (err) => {
       console.error("Firestore error:", err);
-      showStatus("Koneksi gagal", "error");
+      showStatus("Database offline", "error");
     });
 
     return () => unsubLogs();
-  }, [dbUser]);
+  }, [user]);
 
+  /* ================= 3. UTILS & HANDLERS ================= */
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
@@ -110,87 +113,61 @@ const App = () => {
     const { username, password } = loginInput;
     
     if (username === 'admin' && password === 'admin123') {
-      setUser({ nama: 'Administrator', role: 'admin' });
-      showStatus("Admin Login Success", "success");
+      setAppUser({ nama: 'Administrator', role: 'admin' });
+      showStatus("Admin Login Sukses", "success");
       return;
     }
 
     const found = Object.keys(pegawaiAkses).find(p => p.toLowerCase() === username.toLowerCase());
     if (found && password.toLowerCase() === found.toLowerCase()) {
-      setUser({ nama: found, role: 'pegawai' });
-      showStatus(`Halo ${found}!`, "success");
+      setAppUser({ nama: found, role: 'pegawai' });
+      showStatus(`Selamat bekerja, ${found}!`, "success");
     } else {
-      showStatus("Login Gagal", "error");
+      showStatus("Username/Password Salah", "error");
     }
   };
 
   const handleAbsen = async (action) => {
-    if (!dbUser || isLoading || !db) return;
-    
+    if (!user || isLoading || !db) return;
     setIsLoading(true);
+
     const now = new Date();
     const todayStr = now.toLocaleDateString('id-ID');
 
+    // Cek duplikasi hari ini
     const sudahAda = logs.find(l => 
-      l.nama === user.nama && 
+      l.nama === appUser.nama && 
       l.tipe === absensiType && 
       l.aksi === action && 
       new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr
     );
 
     if (sudahAda) {
-      showStatus(`Gagal: Sudah ${action} hari ini`, "error");
+      showStatus(`Sudah ${action} hari ini`, "error");
       setIsLoading(false);
       return;
     }
 
     try {
       await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'absensi_logs'), {
-        nama: user.nama,
+        nama: appUser.nama,
         tipe: absensiType,
         aksi: action,
         waktu: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
         tanggalDisplay: now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }),
         bulanIndex: now.getMonth(),
         timestamp: Date.now(),
-        isEdited: false,
-        deviceTime: now.toISOString()
+        isEdited: false
       });
       showStatus(`Absen ${action} Berhasil`, "success");
     } catch (e) {
-      showStatus("Gagal menyimpan ke Cloud", "error");
-      console.error(e);
+      showStatus("Gagal simpan ke cloud", "error");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const deleteLog = async (id) => {
-    if (user.role !== 'admin' || !db) return;
-    
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absensi_logs', id));
-      showStatus("Data dihapus", "success");
-    } catch (e) {
-      showStatus("Gagal hapus", "error");
-    }
-  };
-
-  const saveEdit = async (id) => {
-    if (user.role !== 'admin' || !db) return;
-    
-    try {
-      await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absensi_logs', id), {
-        ...editForm,
-        isEdited: true
-      });
-      setEditingId(null);
-      showStatus("Data diperbarui", "success");
-    } catch (e) {
-      showStatus("Gagal update", "error");
-    }
-  };
-
+  /* ================= 4. CALCULATIONS ================= */
   const rekapData = useMemo(() => {
     const dailyMap = {};
     const filtered = logs.filter(l => l.bulanIndex === parseInt(filterMonth));
@@ -216,28 +193,8 @@ const App = () => {
         summary[item.nama].lupaOut += 1;
       }
     });
-
     return summary;
   }, [logs, filterMonth]);
-
-  const copyToClipboard = () => {
-    const header = "Nama\tTanggal\tTipe\tAksi\tWaktu\n";
-    const content = filteredLogs.map(l => `${l.nama}\t${l.tanggalDisplay}\t${l.tipe}\t${l.aksi}\t${l.waktu}`).join('\n');
-    
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(header + content);
-      showStatus("Salin Berhasil", "success");
-    } else {
-      // Fallback untuk browser lama
-      const el = document.createElement('textarea');
-      el.value = header + content;
-      document.body.appendChild(el);
-      el.select();
-      document.execCommand('copy');
-      document.body.removeChild(el);
-      showStatus("Salin Berhasil", "success");
-    }
-  };
 
   const filteredLogs = logs.filter(log => {
     const matchTab = log.tipe === activeHistoryTab;
@@ -246,353 +203,208 @@ const App = () => {
     return matchTab && matchName && matchMonth;
   });
 
-  if (!user) {
+  /* ================= 5. RENDERER ================= */
+  if (isInitializing) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-6">
-        <div className="w-full max-w-md">
-          <div className="bg-white rounded-3xl shadow-2xl p-8 space-y-6">
-            <div className="text-center space-y-2">
-              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 text-white rounded-2xl mb-4">
-                <Cloud size={32} />
-              </div>
-              <h1 className="text-3xl font-black text-gray-800">AVI-ABSENSI</h1>
-              <p className="text-xs text-gray-500 font-semibold flex items-center justify-center gap-2">
-                <CheckCircle2 size={14} className="text-emerald-500" />
-                Smart Cloud Protection
-              </p>
-            </div>
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
+        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <h2 className="text-xl font-black text-slate-800 tracking-tight">AVI-ABSENSI</h2>
+        <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-2 animate-pulse">Menghubungkan ke Cloud...</p>
+      </div>
+    );
+  }
 
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <input
-                  type="text"
-                  placeholder="Username"
-                  value={loginInput.username}
-                  onChange={(e) => setLoginInput({...loginInput, username: e.target.value})}
-                  className="w-full p-4 bg-gray-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
-                  required
-                />
-              </div>
-              <div>
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={loginInput.password}
-                  onChange={(e) => setLoginInput({...loginInput, password: e.target.value})}
-                  className="w-full p-4 bg-gray-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full p-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs hover:bg-blue-700 active:scale-95 transition-all shadow-lg"
-              >
-                Masuk
-              </button>
-            </form>
+  if (!appUser) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl p-10 border border-slate-100">
+          <div className="text-center mb-10">
+            <div className="mx-auto w-16 h-16 bg-blue-600 text-white rounded-2xl flex items-center justify-center mb-4 shadow-xl">
+              <Cloud size={32} />
+            </div>
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">AVI-ABSENSI</h1>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mt-2">Attendance Management System</p>
           </div>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <input
+              type="text"
+              placeholder="Username"
+              value={loginInput.username}
+              onChange={(e) => setLoginInput({...loginInput, username: e.target.value})}
+              className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 transition-all"
+              required
+            />
+            <input
+              type="password"
+              placeholder="Password"
+              value={loginInput.password}
+              onChange={(e) => setLoginInput({...loginInput, password: e.target.value})}
+              className="w-full p-4 bg-slate-50 rounded-2xl border-none outline-none font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 transition-all"
+              required
+            />
+            <button type="submit" className="w-full p-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg active:scale-95 transition-all">
+              Masuk
+            </button>
+          </form>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 pb-24">
-      {/* Header */}
-      <div className="bg-white shadow-sm sticky top-0 z-50">
-        <div className="max-w-2xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-50 pb-32">
+      {/* HEADER */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-50 px-6 py-4">
+        <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-black text-gray-800">AVI-ABSENSI</h1>
-            <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider">
-              {user.role}: {user.nama}
-            </p>
+            <h1 className="text-lg font-black text-slate-900 tracking-tight">AVI-ABSENSI</h1>
+            <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{appUser.nama} • {appUser.role}</p>
           </div>
-          <button
-            onClick={() => setUser(null)}
-            className="p-3 bg-white text-rose-500 rounded-2xl border border-gray-100 hover:bg-rose-50 active:scale-95 transition-all"
-          >
+          <button onClick={() => setAppUser(null)} className="p-3 text-rose-500 bg-rose-50 rounded-xl hover:bg-rose-100 transition-all">
             <LogOut size={20} />
           </button>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-2xl mx-auto p-6 space-y-6">
-        {currentPage === 'absen' && (
+      <main className="max-w-2xl mx-auto p-6 space-y-6">
+        {currentPage === 'absen' ? (
           <>
-            {/* Clock Display */}
-            <div className="bg-white rounded-3xl shadow-xl p-8 text-center space-y-2">
-              <div className="text-5xl font-black text-gray-800">
+            <div className="bg-white rounded-[2.5rem] shadow-xl p-10 text-center border border-slate-100">
+              <div className="text-6xl font-black text-slate-900 tracking-tighter mb-2">
                 {currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
               </div>
-              <div className="text-sm text-gray-500 font-semibold">
+              <p className="text-xs text-slate-400 font-black uppercase tracking-widest">
                 {currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </div>
-            </div>
-
-            {/* Warning Box */}
-            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-              <AlertTriangle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
-              <p className="text-xs text-amber-800 font-semibold leading-relaxed">
-                Sistem terkunci. Anda hanya bisa melakukan absensi untuk tanggal hari ini.
               </p>
             </div>
 
-            {/* Type Selector */}
-            <div className="flex gap-3 bg-gray-100 p-2 rounded-2xl">
-              <button
-                onClick={() => setAbsensiType('Umum')}
-                className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${
-                  absensiType === 'Umum' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'
-                }`}
-              >
-                Umum
-              </button>
-              <button
-                onClick={() => setAbsensiType('Live')}
-                className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${
-                  absensiType === 'Live' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-400'
-                }`}
-              >
-                Live Session
-              </button>
+            <div className="flex bg-slate-200/50 p-1.5 rounded-full border border-slate-200">
+              {['Umum', 'Live'].map(type => (
+                <button
+                  key={type}
+                  onClick={() => setAbsensiType(type)}
+                  className={`flex-1 py-3 rounded-full font-black text-[10px] uppercase transition-all ${
+                    absensiType === type ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'
+                  }`}
+                >
+                  {type === 'Live' ? 'Live Session' : 'Sesi Umum'}
+                </button>
+              ))}
             </div>
 
-            {/* Action Buttons */}
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => handleAbsen('Masuk')}
                 disabled={isLoading}
-                className="bg-emerald-500 text-white p-6 rounded-3xl font-black uppercase text-[10px] shadow-lg flex flex-col items-center gap-2 active:scale-95 disabled:opacity-50 transition-all"
+                className="bg-emerald-600 text-white p-8 rounded-[2.5rem] font-black uppercase text-[11px] shadow-lg flex flex-col items-center gap-4 active:scale-95 disabled:opacity-50 transition-all"
               >
-                <CheckCircle2 size={28} />
+                <div className="bg-white/20 p-4 rounded-2xl"><CheckCircle2 size={32} /></div>
                 Clock In
               </button>
               <button
                 onClick={() => handleAbsen('Pulang')}
                 disabled={isLoading}
-                className="bg-rose-500 text-white p-6 rounded-3xl font-black uppercase text-[10px] shadow-lg flex flex-col items-center gap-2 active:scale-95 disabled:opacity-50 transition-all"
+                className="bg-rose-600 text-white p-8 rounded-[2.5rem] font-black uppercase text-[11px] shadow-lg flex flex-col items-center gap-4 active:scale-95 disabled:opacity-50 transition-all"
               >
-                <Clock size={28} />
+                <div className="bg-white/20 p-4 rounded-2xl"><Clock size={32} /></div>
                 Clock Out
               </button>
             </div>
           </>
-        )}
-
-        {currentPage === 'history' && (
-          <div className="space-y-4">
-            {/* Summary Cards (Admin Only) */}
-            {user.role === 'admin' && (
+        ) : (
+          <div className="space-y-6">
+            {appUser.role === 'admin' && (
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-3xl shadow-lg">
-                  <div className="text-[10px] font-black uppercase mb-2 opacity-80">Total Jam</div>
-                  <div className="text-3xl font-black">
-                    {Object.values(rekapData).reduce((a, b) => a + b.jam, 0).toFixed(1)} h
-                  </div>
+                <div className="bg-blue-600 text-white p-6 rounded-[2rem] shadow-lg">
+                  <p className="text-[10px] font-black uppercase opacity-60 mb-1">Total Jam Kerja</p>
+                  <p className="text-3xl font-black">{Object.values(rekapData).reduce((a, b) => a + b.jam, 0).toFixed(1)}h</p>
                 </div>
-                <div className="bg-gradient-to-br from-rose-500 to-rose-600 text-white p-6 rounded-3xl shadow-lg">
-                  <div className="text-[10px] font-black uppercase mb-2 opacity-80">Isu Keluar</div>
-                  <div className="text-3xl font-black">
-                    {Object.values(rekapData).reduce((a, b) => a + b.lupaOut, 0)}
-                  </div>
+                <div className="bg-rose-600 text-white p-6 rounded-[2rem] shadow-lg">
+                  <p className="text-[10px] font-black uppercase opacity-60 mb-1">Isu Lupa Keluar</p>
+                  <p className="text-3xl font-black">{Object.values(rekapData).reduce((a, b) => a + b.lupaOut, 0)}</p>
                 </div>
               </div>
             )}
 
-            {/* Tab Selector */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => setActiveHistoryTab('Umum')}
-                className={`px-4 py-2 rounded-full text-[10px] font-black uppercase transition-all ${
-                  activeHistoryTab === 'Umum' ? 'bg-blue-600 text-white' : 'bg-white text-gray-400 border border-gray-100'
-                }`}
-              >
-                Umum
-              </button>
-              <button
-                onClick={() => setActiveHistoryTab('Live')}
-                className={`px-4 py-2 rounded-full text-[10px] font-black uppercase transition-all ${
-                  activeHistoryTab === 'Live' ? 'bg-purple-600 text-white' : 'bg-white text-gray-400 border border-gray-100'
-                }`}
-              >
-                Live
-              </button>
-              {user.role === 'admin' && (
-                <button
-                  onClick={copyToClipboard}
-                  className="ml-auto px-4 py-2 bg-emerald-500 text-white rounded-full text-[10px] font-black uppercase flex items-center gap-2 hover:bg-emerald-600 active:scale-95 transition-all"
-                >
-                  <Download size={14} /> Export
-                </button>
-              )}
+            <div className="bg-white p-6 rounded-[2.5rem] border border-slate-200 space-y-4">
+              <div className="flex gap-2">
+                <div className="flex bg-slate-100 p-1 rounded-full flex-1 border border-slate-200">
+                  {['Umum', 'Live'].map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setActiveHistoryTab(t)}
+                      className={`flex-1 py-2.5 rounded-full text-[10px] font-black uppercase transition-all ${activeHistoryTab === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+                {appUser.role === 'admin' && (
+                  <button onClick={() => {
+                    const data = filteredLogs.map(l => `${l.nama}\t${l.waktu}\t${l.aksi}\t${l.tanggalDisplay}`).join('\n');
+                    navigator.clipboard.writeText(data);
+                    showStatus("Data disalin!", "success");
+                  }} className="p-3 bg-slate-900 text-white rounded-2xl active:scale-90 transition-all">
+                    <Download size={18} />
+                  </button>
+                )}
+              </div>
             </div>
 
-            {/* Filters (Admin Only) */}
-            {user.role === 'admin' && (
-              <div className="flex gap-3">
-                <select
-                  value={filterMonth}
-                  onChange={(e) => setFilterMonth(e.target.value)}
-                  className="p-2 bg-gray-50 rounded-xl text-[10px] font-black border-none outline-none uppercase tracking-wider flex-1"
-                >
-                  {daftarBulan.map((b, i) => (
-                    <option key={i} value={i}>{b}</option>
-                  ))}
-                </select>
-                <select
-                  value={filterName}
-                  onChange={(e) => setFilterName(e.target.value)}
-                  className="p-2 bg-gray-50 rounded-xl text-[10px] font-black border-none outline-none uppercase tracking-wider flex-1"
-                >
-                  <option value="Semua">Semua Pegawai</option>
-                  {(activeHistoryTab === 'Umum' ? daftarPegawai.Umum : daftarPegawai.Live).map(n => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Log List */}
-            <div className="space-y-3">
+            <div className="space-y-4">
               {filteredLogs.map(log => (
-                <div key={log.id} className="bg-white rounded-2xl shadow-sm p-4 relative">
-                  <div className="flex items-start gap-4">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xs ${
-                      log.aksi === 'Masuk' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
-                    }`}>
+                <div key={log.id} className="bg-white rounded-[2rem] p-5 border border-slate-100 shadow-sm relative">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-[10px] ${log.aksi === 'Masuk' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
                       {log.aksi === 'Masuk' ? 'IN' : 'OUT'}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-black text-gray-800">{log.nama}</h3>
-                        {log.isEdited && <Edit3 size={12} className="text-amber-500" />}
-                      </div>
-                      <p className="text-xs text-gray-500 font-semibold">{log.tanggalDisplay}</p>
-                      {editingId === log.id ? (
-                        <div className="mt-2 space-y-2">
-                          <select
-                            value={editForm.aksi}
-                            onChange={(e) => setEditForm({...editForm, aksi: e.target.value})}
-                            className="w-full p-2 bg-gray-50 rounded-lg text-xs font-semibold"
-                          >
-                            <option value="Masuk">Masuk</option>
-                            <option value="Pulang">Pulang</option>
-                          </select>
-                          <input
-                            type="time"
-                            value={editForm.waktu}
-                            onChange={(e) => setEditForm({...editForm, waktu: e.target.value})}
-                            className="w-full p-2 bg-gray-50 rounded-lg text-xs font-semibold"
-                          />
-                        </div>
-                      ) : (
-                        <p className="text-sm font-black text-gray-800 mt-1">{log.waktu}</p>
-                      )}
-                    </div>
-                    <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
-                      log.tipe === 'Umum' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
-                    }`}>
-                      {log.tipe}
+                    <div>
+                      <h4 className="font-black text-slate-800">{log.nama}</h4>
+                      <p className="text-[10px] font-black text-slate-400 uppercase">{log.tanggalDisplay}</p>
+                      <p className="text-lg font-black text-slate-900 mt-1">{log.waktu}</p>
                     </div>
                   </div>
-                  {user.role === 'admin' && (
-                    <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
-                      {editingId === log.id ? (
-                        <button
-                          onClick={() => saveEdit(log.id)}
-                          className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 active:scale-95 transition-all"
-                        >
-                          <Check size={16} />
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => {
-                            setEditingId(log.id);
-                            setEditForm({aksi: log.aksi, waktu: log.waktu});
-                          }}
-                          className="p-2 text-blue-400 hover:bg-blue-50 rounded-lg transition-all"
-                        >
-                          <Edit3 size={16} />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => deleteLog(log.id)}
-                        className="p-2 text-rose-300 hover:bg-rose-50 rounded-lg transition-all"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>
 
-            {/* Salary Summary (Admin Only for Live) */}
-            {user.role === 'admin' && activeHistoryTab === 'Live' && (
-              <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-3xl p-6 space-y-4 shadow-xl">
-                <h3 className="text-lg font-black flex items-center gap-2">
-                  <Wallet size={20} />
-                  Detail Gaji Live
-                </h3>
-                <div className="space-y-3">
-                  {Object.entries(rekapData)
-                    .filter(([nama]) => filterName === 'Semua' || nama === filterName)
-                    .map(([nama, data]) => (
-                      <div key={nama} className="bg-white/10 backdrop-blur rounded-2xl p-4">
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-black text-lg">{nama}</h4>
-                          <span className="text-xs font-semibold opacity-80">{data.jam.toFixed(1)} Jam Kerja</span>
-                        </div>
-                        <div className="text-2xl font-black">
-                          Rp {Math.round(data.gaji).toLocaleString('id-ID')}
-                        </div>
-                        {data.lupaOut > 0 && (
-                          <div className="mt-2 flex items-center gap-2 text-xs font-semibold bg-amber-500/20 px-3 py-1 rounded-full w-fit">
-                            <AlertTriangle size={12} />
-                            {data.lupaOut} Isu Out
-                          </div>
-                        )}
-                      </div>
-                    ))}
+            {appUser.role === 'admin' && activeHistoryTab === 'Live' && (
+              <div className="bg-slate-900 text-white p-8 rounded-[2.5rem] shadow-xl space-y-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <Wallet className="text-blue-400" />
+                  <h3 className="font-black uppercase text-xs tracking-widest">Estimasi Gaji Live</h3>
                 </div>
+                {Object.entries(rekapData).map(([nama, data]) => (
+                  <div key={nama} className="flex justify-between items-center border-b border-white/10 pb-4">
+                    <div>
+                      <p className="font-black text-sm">{nama}</p>
+                      <p className="text-[10px] text-slate-400 font-bold uppercase">{data.jam.toFixed(1)} Jam</p>
+                    </div>
+                    <p className="text-xl font-black text-blue-400">Rp {Math.round(data.gaji).toLocaleString('id-ID')}</p>
+                  </div>
+                ))}
               </div>
             )}
           </div>
         )}
-      </div>
+      </main>
 
-      {/* Status Message */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-slate-200 px-6 py-4 flex gap-4 z-40 shadow-2xl">
+        <button onClick={() => setCurrentPage('absen')} className={`flex-1 py-3 rounded-2xl flex flex-col items-center gap-1 transition-all ${currentPage === 'absen' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>
+          <Clock size={20} />
+          <span className="text-[9px] font-black uppercase tracking-widest">Absen</span>
+        </button>
+        <button onClick={() => setCurrentPage('history')} className={`flex-1 py-3 rounded-2xl flex flex-col items-center gap-1 transition-all ${currentPage === 'history' ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400'}`}>
+          <History size={20} />
+          <span className="text-[9px] font-black uppercase tracking-widest">Audit</span>
+        </button>
+      </nav>
+
       {statusMessage && (
-        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl font-black text-xs shadow-2xl ${
-          statusMessage.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
-        }`}>
+        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl text-white font-black text-[10px] uppercase shadow-2xl animate-bounce z-[100] ${statusMessage.type === 'success' ? 'bg-emerald-600' : 'bg-rose-600'}`}>
           {statusMessage.msg}
         </div>
       )}
-
-      {/* Bottom Navigation */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-2xl">
-        <div className="max-w-2xl mx-auto px-6 py-3 flex gap-2">
-          <button
-            onClick={() => setCurrentPage('absen')}
-            className={`flex-1 py-3 rounded-[2rem] flex flex-col items-center transition-all ${
-              currentPage === 'absen' ? 'bg-blue-600 text-white' : 'text-gray-400'
-            }`}
-          >
-            <Clock size={20} />
-            <span className="text-[10px] font-black uppercase mt-1">Absen</span>
-          </button>
-          <button
-            onClick={() => setCurrentPage('history')}
-            className={`flex-1 py-3 rounded-[2rem] flex flex-col items-center transition-all ${
-              currentPage === 'history' ? 'bg-blue-600 text-white' : 'text-gray-400'
-            }`}
-          >
-            <History size={20} />
-            <span className="text-[10px] font-black uppercase mt-1">Audit</span>
-          </button>
-        </div>
-      </div>
     </div>
   );
 };
