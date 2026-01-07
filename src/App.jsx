@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 
 // Konfigurasi Firebase diambil dari environment variables atau global config
-const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+const firebaseConfig = JSON.parse(import.meta.env.VITE_FIREBASE_CONFIG || __firebase_config);
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
