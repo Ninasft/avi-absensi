@@ -28,7 +28,7 @@ if (typeof window !== 'undefined') {
 
 const appId = 'avi-absensi-v1';
 
-const App = () => {
+export default function App() {
   const [user, setUser] = useState(null);
   const [dbUser, setDbUser] = useState(null);
   const [currentPage, setCurrentPage] = useState('absen');
@@ -173,8 +173,44 @@ const App = () => {
           </button>
         </div>
       </main>
+
+      {/* BOTTOM NAV */}
+      <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-[var(--border-soft)] safe-bottom">
+        <div className="max-w-2xl mx-auto px-4 py-3 flex gap-2">
+          <button
+            onClick={() => setCurrentPage('absen')}
+            className={`flex-1 py-3 rounded-2xl font-black ${
+              currentPage === 'absen'
+                ? 'bg-[var(--primary-600)] text-white'
+                : 'text-[var(--text-muted)]'
+            }`}
+          >
+            <Clock />
+          </button>
+          <button
+            onClick={() => setCurrentPage('history')}
+            className={`flex-1 py-3 rounded-2xl font-black ${
+              currentPage === 'history'
+                ? 'bg-[var(--primary-600)] text-white'
+                : 'text-[var(--text-muted)]'
+            }`}
+          >
+            <History />
+          </button>
+        </div>
+      </nav>
+
+      {statusMessage && (
+        <div
+          className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl font-black text-white ${
+            statusMessage.type === 'success'
+              ? 'bg-[var(--success-600)]'
+              : 'bg-[var(--danger-600)]'
+          }`}
+        >
+          {statusMessage.msg}
+        </div>
+      )}
     </div>
   );
-};
-
-export default App;
+}
