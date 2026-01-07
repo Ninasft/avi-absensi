@@ -1,56 +1,29 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, serverTimestamp, doc, query } from 'firebase/firestore';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, addDoc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
+import { doc } from 'firebase/firestore';
 import { Clock, CheckCircle2, LogOut, History, Trash2, Edit3, Wallet, Cloud, Download, AlertTriangle, ChevronRight, Check, Calendar } from 'lucide-react';
 
-/* ================= STYLE (WCAG COMPLIANT) ================= */
-const styleTag = (
-  <style>{`
-    :root {
-      /* Palette Modern & High Contrast */
-      --primary-600: #1e40af;    /* Deep Blue (Contrast 7.1:1) */
-      --primary-700: #1e3a8a;
-      
-      --success-600: #166534;    /* Deep Emerald (Contrast 6.2:1) */
-      --danger-600: #991b1b;     /* Deep Rose/Red (Contrast 6.0:1) */
-      --warning-800: #92400e;    /* Deep Amber */
-      --purple-600: #7e22ce;     /* Vivid Purple */
-      
-      /* Neutrals */
-      --bg-main: #f8fafc;
-      --bg-card: #ffffff;
-      --text-primary: #0f172a;   /* Slate 900 */
-      --text-secondary: #475569; /* Slate 600 */
-      --text-muted: #64748b;     /* Slate 500 */
-      --border-soft: #cbd5e1;    /* Slate 300 */
-    }
+// Inisialisasi Firebase
+let app, auth, db;
 
-    body {
-      background-color: var(--bg-main);
-      color: var(--text-primary);
-      font-family: 'Inter', system-ui, sans-serif;
-    }
+if (typeof window !== 'undefined') {
+  const firebaseConfig = {
+    apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+    authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  };
 
-    /* Override focus for accessibility */
-    input:focus {
-      outline: 2px solid var(--primary-600);
-      outline-offset: 2px;
-    }
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+}
 
-    .shadow-modern {
-      shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-      shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-    }
-  `}</style>
-);
-
-/* ================= FIREBASE INIT ================= */
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'avi-absensi-v1';
+const appId = 'avi-absensi-v1';
 
 const App = () => {
   const [user, setUser] = useState(null);
@@ -62,8 +35,6 @@ const App = () => {
   const [logs, setLogs] = useState([]);
   const [statusMessage, setStatusMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [initError, setInitError] = useState(null);
-  const [isInitializing, setIsInitializing] = useState(true);
 
   // Filter States
   const [activeHistoryTab, setActiveHistoryTab] = useState('Umum');
@@ -93,19 +64,16 @@ const App = () => {
 
   // Auth Initialization
   useEffect(() => {
+    if (typeof window === 'undefined' || !auth) return;
+    
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (err) {
-        setInitError(`Authentication error: ${err.message}`);
-      } finally {
-        setIsInitializing(false);
+        console.error("Auth error", err);
       }
     };
+    
     initAuth();
     const unsubscribe = onAuthStateChanged(auth, (u) => setDbUser(u));
     return () => unsubscribe();
@@ -113,14 +81,17 @@ const App = () => {
 
   // Sync Data
   useEffect(() => {
-    if (!dbUser) return;
+    if (!dbUser || !db) return;
+    
     const qLogs = collection(db, 'artifacts', appId, 'public', 'data', 'absensi_logs');
     const unsubLogs = onSnapshot(qLogs, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setLogs(data.sort((a, b) => b.timestamp - a.timestamp));
     }, (err) => {
+      console.error("Firestore error:", err);
       showStatus("Koneksi gagal", "error");
     });
+
     return () => unsubLogs();
   }, [dbUser]);
 
@@ -137,11 +108,13 @@ const App = () => {
   const handleLogin = (e) => {
     e.preventDefault();
     const { username, password } = loginInput;
+    
     if (username === 'admin' && password === 'admin123') {
       setUser({ nama: 'Administrator', role: 'admin' });
       showStatus("Admin Login Success", "success");
       return;
     }
+
     const found = Object.keys(pegawaiAkses).find(p => p.toLowerCase() === username.toLowerCase());
     if (found && password.toLowerCase() === found.toLowerCase()) {
       setUser({ nama: found, role: 'pegawai' });
@@ -152,7 +125,8 @@ const App = () => {
   };
 
   const handleAbsen = async (action) => {
-    if (!dbUser || isLoading) return;
+    if (!dbUser || isLoading || !db) return;
+    
     setIsLoading(true);
     const now = new Date();
     const todayStr = now.toLocaleDateString('id-ID');
@@ -185,13 +159,15 @@ const App = () => {
       showStatus(`Absen ${action} Berhasil`, "success");
     } catch (e) {
       showStatus("Gagal menyimpan ke Cloud", "error");
+      console.error(e);
     } finally {
       setIsLoading(false);
     }
   };
 
   const deleteLog = async (id) => {
-    if (user.role !== 'admin') return;
+    if (user.role !== 'admin' || !db) return;
+    
     try {
       await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absensi_logs', id));
       showStatus("Data dihapus", "success");
@@ -201,7 +177,8 @@ const App = () => {
   };
 
   const saveEdit = async (id) => {
-    if (user.role !== 'admin') return;
+    if (user.role !== 'admin' || !db) return;
+    
     try {
       await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'absensi_logs', id), {
         ...editForm,
@@ -246,13 +223,20 @@ const App = () => {
   const copyToClipboard = () => {
     const header = "Nama\tTanggal\tTipe\tAksi\tWaktu\n";
     const content = filteredLogs.map(l => `${l.nama}\t${l.tanggalDisplay}\t${l.tipe}\t${l.aksi}\t${l.waktu}`).join('\n');
-    const el = document.createElement('textarea');
-    el.value = header + content;
-    document.body.appendChild(el);
-    el.select();
-    document.execCommand('copy');
-    document.body.removeChild(el);
-    showStatus("Salin Berhasil", "success");
+    
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(header + content);
+      showStatus("Salin Berhasil", "success");
+    } else {
+      // Fallback untuk browser lama
+      const el = document.createElement('textarea');
+      el.value = header + content;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      showStatus("Salin Berhasil", "success");
+    }
   };
 
   const filteredLogs = logs.filter(log => {
@@ -262,144 +246,133 @@ const App = () => {
     return matchTab && matchName && matchMonth;
   });
 
-  if (initError) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 text-center">
-        <div className="bg-white p-8 rounded-3xl shadow-xl border border-red-200 max-w-sm">
-          <AlertTriangle className="text-red-600 mx-auto mb-4" size={48} />
-          <h1 className="text-xl font-black text-slate-900 mb-2">System Error</h1>
-          <p className="text-sm text-slate-600 mb-4">{initError}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (isInitializing) {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent"></div>
-      </div>
-    );
-  }
-
   if (!user) {
     return (
-      <div className="min-h-screen bg-[var(--bg-main)] flex items-center justify-center p-6">
-        {styleTag}
-        <div className="w-full max-w-md bg-white rounded-[2rem] shadow-xl p-10 border border-slate-100">
-          <div className="text-center mb-8">
-            <div className="mx-auto w-16 h-16 bg-[var(--primary-600)] text-white rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-              <Cloud size={32} />
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-6">
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 space-y-6">
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-blue-600 text-white rounded-2xl mb-4">
+                <Cloud size={32} />
+              </div>
+              <h1 className="text-3xl font-black text-gray-800">AVI-ABSENSI</h1>
+              <p className="text-xs text-gray-500 font-semibold flex items-center justify-center gap-2">
+                <CheckCircle2 size={14} className="text-emerald-500" />
+                Smart Cloud Protection
+              </p>
             </div>
-            <h1 className="text-3xl font-black text-slate-900 tracking-tight">AVI-ABSENSI</h1>
-            <p className="text-sm font-bold text-[var(--text-secondary)] mt-1 flex items-center justify-center gap-2">
-              <CheckCircle2 size={16} className="text-emerald-600" />
-              Secure Cloud Attendance
-            </p>
-          </div>
 
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input
-              type="text"
-              placeholder="Username"
-              value={loginInput.username}
-              onChange={(e) => setLoginInput({...loginInput, username: e.target.value})}
-              className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-200 outline-none text-slate-900 font-semibold"
-              required
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              value={loginInput.password}
-              onChange={(e) => setLoginInput({...loginInput, password: e.target.value})}
-              className="w-full p-4 bg-slate-50 rounded-2xl border border-slate-200 outline-none text-slate-900 font-semibold"
-              required
-            />
-            <button
-              type="submit"
-              className="w-full p-4 bg-[var(--primary-600)] hover:bg-[var(--primary-700)] text-white rounded-2xl font-black uppercase tracking-wider text-xs transition-all shadow-md active:scale-95"
-            >
-              Masuk Sekarang
-            </button>
-          </form>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <input
+                  type="text"
+                  placeholder="Username"
+                  value={loginInput.username}
+                  onChange={(e) => setLoginInput({...loginInput, username: e.target.value})}
+                  className="w-full p-4 bg-gray-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
+                  required
+                />
+              </div>
+              <div>
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={loginInput.password}
+                  onChange={(e) => setLoginInput({...loginInput, password: e.target.value})}
+                  className="w-full p-4 bg-gray-50 rounded-2xl border-none outline-none focus:ring-2 focus:ring-blue-500 text-sm font-semibold"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                className="w-full p-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs hover:bg-blue-700 active:scale-95 transition-all shadow-lg"
+              >
+                Masuk
+              </button>
+            </form>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg-main)] pb-24">
-      {styleTag}
-      <header className="bg-white border-b border-[var(--border-soft)] sticky top-0 z-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 pb-24">
+      {/* Header */}
+      <div className="bg-white shadow-sm sticky top-0 z-50">
         <div className="max-w-2xl mx-auto px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-black text-slate-900">AVI-ABSENSI</h1>
-            <p className="text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest">
+            <h1 className="text-xl font-black text-gray-800">AVI-ABSENSI</h1>
+            <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-wider">
               {user.role}: {user.nama}
             </p>
           </div>
           <button
             onClick={() => setUser(null)}
-            className="p-3 text-[var(--danger-600)] hover:bg-red-50 rounded-2xl transition-all border border-transparent hover:border-red-100"
+            className="p-3 bg-white text-rose-500 rounded-2xl border border-gray-100 hover:bg-rose-50 active:scale-95 transition-all"
           >
             <LogOut size={20} />
           </button>
         </div>
-      </header>
+      </div>
 
       <div className="max-w-2xl mx-auto p-6 space-y-6">
         {currentPage === 'absen' && (
           <>
-            <div className="bg-white rounded-[2.5rem] shadow-lg p-10 text-center border border-slate-100">
-              <div className="text-6xl font-black text-slate-900 tracking-tighter mb-2">
+            {/* Clock Display */}
+            <div className="bg-white rounded-3xl shadow-xl p-8 text-center space-y-2">
+              <div className="text-5xl font-black text-gray-800">
                 {currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
               </div>
-              <div className="text-sm text-[var(--text-secondary)] font-bold uppercase tracking-widest">
+              <div className="text-sm text-gray-500 font-semibold">
                 {currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}
               </div>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
-              <AlertTriangle className="text-[var(--warning-800)] flex-shrink-0" size={20} />
-              <p className="text-xs text-[var(--warning-800)] font-bold leading-relaxed">
-                Sistem Terkunci: Hanya dapat melakukan absensi sesuai tanggal perangkat hari ini.
+            {/* Warning Box */}
+            <div className="bg-amber-50 border-2 border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+              <AlertTriangle className="text-amber-600 flex-shrink-0 mt-0.5" size={20} />
+              <p className="text-xs text-amber-800 font-semibold leading-relaxed">
+                Sistem terkunci. Anda hanya bisa melakukan absensi untuk tanggal hari ini.
               </p>
             </div>
 
-            <div className="flex gap-2 bg-slate-100 p-2 rounded-[2rem]">
+            {/* Type Selector */}
+            <div className="flex gap-3 bg-gray-100 p-2 rounded-2xl">
               <button
                 onClick={() => setAbsensiType('Umum')}
-                className={`flex-1 py-3 rounded-full font-black text-[10px] uppercase transition-all ${
-                  absensiType === 'Umum' ? 'bg-white text-[var(--primary-600)] shadow-sm' : 'text-slate-500'
+                className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${
+                  absensiType === 'Umum' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400'
                 }`}
               >
                 Umum
               </button>
               <button
                 onClick={() => setAbsensiType('Live')}
-                className={`flex-1 py-3 rounded-full font-black text-[10px] uppercase transition-all ${
-                  absensiType === 'Live' ? 'bg-white text-[var(--purple-600)] shadow-sm' : 'text-slate-500'
+                className={`flex-1 py-3 rounded-xl font-black text-[10px] uppercase transition-all ${
+                  absensiType === 'Live' ? 'bg-white text-purple-600 shadow-sm' : 'text-gray-400'
                 }`}
               >
                 Live Session
               </button>
             </div>
 
+            {/* Action Buttons */}
             <div className="grid grid-cols-2 gap-4">
               <button
                 onClick={() => handleAbsen('Masuk')}
                 disabled={isLoading}
-                className="bg-[var(--success-600)] text-white p-8 rounded-[2.5rem] font-black uppercase text-[11px] shadow-lg flex flex-col items-center gap-3 active:scale-95 disabled:opacity-50 transition-all"
+                className="bg-emerald-500 text-white p-6 rounded-3xl font-black uppercase text-[10px] shadow-lg flex flex-col items-center gap-2 active:scale-95 disabled:opacity-50 transition-all"
               >
-                <CheckCircle2 size={32} />
+                <CheckCircle2 size={28} />
                 Clock In
               </button>
               <button
                 onClick={() => handleAbsen('Pulang')}
                 disabled={isLoading}
-                className="bg-[var(--danger-600)] text-white p-8 rounded-[2.5rem] font-black uppercase text-[11px] shadow-lg flex flex-col items-center gap-3 active:scale-95 disabled:opacity-50 transition-all"
+                className="bg-rose-500 text-white p-6 rounded-3xl font-black uppercase text-[10px] shadow-lg flex flex-col items-center gap-2 active:scale-95 disabled:opacity-50 transition-all"
               >
-                <Clock size={32} />
+                <Clock size={28} />
                 Clock Out
               </button>
             </div>
@@ -408,16 +381,17 @@ const App = () => {
 
         {currentPage === 'history' && (
           <div className="space-y-4">
+            {/* Summary Cards (Admin Only) */}
             {user.role === 'admin' && (
               <div className="grid grid-cols-2 gap-4">
-                <div className="bg-[var(--primary-600)] text-white p-6 rounded-[2rem] shadow-md">
-                  <div className="text-[10px] font-black uppercase opacity-80 mb-1">Total Jam</div>
+                <div className="bg-gradient-to-br from-blue-500 to-blue-600 text-white p-6 rounded-3xl shadow-lg">
+                  <div className="text-[10px] font-black uppercase mb-2 opacity-80">Total Jam</div>
                   <div className="text-3xl font-black">
-                    {Object.values(rekapData).reduce((a, b) => a + b.jam, 0).toFixed(1)} <span className="text-sm">Jam</span>
+                    {Object.values(rekapData).reduce((a, b) => a + b.jam, 0).toFixed(1)} h
                   </div>
                 </div>
-                <div className="bg-[var(--danger-600)] text-white p-6 rounded-[2rem] shadow-md">
-                  <div className="text-[10px] font-black uppercase opacity-80 mb-1">Isu Out</div>
+                <div className="bg-gradient-to-br from-rose-500 to-rose-600 text-white p-6 rounded-3xl shadow-lg">
+                  <div className="text-[10px] font-black uppercase mb-2 opacity-80">Isu Keluar</div>
                   <div className="text-3xl font-black">
                     {Object.values(rekapData).reduce((a, b) => a + b.lupaOut, 0)}
                   </div>
@@ -425,43 +399,41 @@ const App = () => {
               </div>
             )}
 
-            <div className="flex gap-2 items-center">
-              <div className="flex bg-slate-100 p-1.5 rounded-full">
-                <button
-                  onClick={() => setActiveHistoryTab('Umum')}
-                  className={`px-6 py-2 rounded-full text-[10px] font-black uppercase transition-all ${
-                    activeHistoryTab === 'Umum' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
-                  }`}
-                >
-                  Umum
-                </button>
-                <button
-                  onClick={() => setActiveHistoryTab('Live')}
-                  className={`px-6 py-2 rounded-full text-[10px] font-black uppercase transition-all ${
-                    activeHistoryTab === 'Live' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
-                  }`}
-                >
-                  Live
-                </button>
-              </div>
-              
+            {/* Tab Selector */}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setActiveHistoryTab('Umum')}
+                className={`px-4 py-2 rounded-full text-[10px] font-black uppercase transition-all ${
+                  activeHistoryTab === 'Umum' ? 'bg-blue-600 text-white' : 'bg-white text-gray-400 border border-gray-100'
+                }`}
+              >
+                Umum
+              </button>
+              <button
+                onClick={() => setActiveHistoryTab('Live')}
+                className={`px-4 py-2 rounded-full text-[10px] font-black uppercase transition-all ${
+                  activeHistoryTab === 'Live' ? 'bg-purple-600 text-white' : 'bg-white text-gray-400 border border-gray-100'
+                }`}
+              >
+                Live
+              </button>
               {user.role === 'admin' && (
                 <button
                   onClick={copyToClipboard}
-                  className="ml-auto p-3 bg-white border border-slate-200 text-slate-700 rounded-full hover:bg-slate-50 transition-all active:scale-90"
-                  title="Export Data"
+                  className="ml-auto px-4 py-2 bg-emerald-500 text-white rounded-full text-[10px] font-black uppercase flex items-center gap-2 hover:bg-emerald-600 active:scale-95 transition-all"
                 >
-                  <Download size={18} />
+                  <Download size={14} /> Export
                 </button>
               )}
             </div>
 
+            {/* Filters (Admin Only) */}
             {user.role === 'admin' && (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="flex gap-3">
                 <select
                   value={filterMonth}
                   onChange={(e) => setFilterMonth(e.target.value)}
-                  className="p-3 bg-white border border-slate-200 rounded-2xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500"
+                  className="p-2 bg-gray-50 rounded-xl text-[10px] font-black border-none outline-none uppercase tracking-wider flex-1"
                 >
                   {daftarBulan.map((b, i) => (
                     <option key={i} value={i}>{b}</option>
@@ -470,7 +442,7 @@ const App = () => {
                 <select
                   value={filterName}
                   onChange={(e) => setFilterName(e.target.value)}
-                  className="p-3 bg-white border border-slate-200 rounded-2xl text-[10px] font-black uppercase outline-none focus:ring-2 focus:ring-blue-500"
+                  className="p-2 bg-gray-50 rounded-xl text-[10px] font-black border-none outline-none uppercase tracking-wider flex-1"
                 >
                   <option value="Semua">Semua Pegawai</option>
                   {(activeHistoryTab === 'Umum' ? daftarPegawai.Umum : daftarPegawai.Live).map(n => (
@@ -480,28 +452,28 @@ const App = () => {
               </div>
             )}
 
+            {/* Log List */}
             <div className="space-y-3">
               {filteredLogs.map(log => (
-                <div key={log.id} className="bg-white rounded-3xl shadow-sm p-5 border border-slate-100 relative">
+                <div key={log.id} className="bg-white rounded-2xl shadow-sm p-4 relative">
                   <div className="flex items-start gap-4">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xs shadow-inner ${
-                      log.aksi === 'Masuk' ? 'bg-emerald-50 text-[var(--success-600)]' : 'bg-red-50 text-[var(--danger-600)]'
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xs ${
+                      log.aksi === 'Masuk' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
                     }`}>
                       {log.aksi === 'Masuk' ? 'IN' : 'OUT'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <h3 className="font-black text-slate-900">{log.nama}</h3>
-                        {log.isEdited && <Edit3 size={12} className="text-amber-600" />}
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="font-black text-gray-800">{log.nama}</h3>
+                        {log.isEdited && <Edit3 size={12} className="text-amber-500" />}
                       </div>
-                      <p className="text-[10px] text-[var(--text-secondary)] font-bold uppercase tracking-wider">{log.tanggalDisplay}</p>
-                      
+                      <p className="text-xs text-gray-500 font-semibold">{log.tanggalDisplay}</p>
                       {editingId === log.id ? (
-                        <div className="mt-3 grid grid-cols-2 gap-2">
+                        <div className="mt-2 space-y-2">
                           <select
                             value={editForm.aksi}
                             onChange={(e) => setEditForm({...editForm, aksi: e.target.value})}
-                            className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                            className="w-full p-2 bg-gray-50 rounded-lg text-xs font-semibold"
                           >
                             <option value="Masuk">Masuk</option>
                             <option value="Pulang">Pulang</option>
@@ -510,61 +482,74 @@ const App = () => {
                             type="time"
                             value={editForm.waktu}
                             onChange={(e) => setEditForm({...editForm, waktu: e.target.value})}
-                            className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold"
+                            className="w-full p-2 bg-gray-50 rounded-lg text-xs font-semibold"
                           />
                         </div>
                       ) : (
-                        <p className="text-lg font-black text-slate-900 mt-1">{log.waktu}</p>
+                        <p className="text-sm font-black text-gray-800 mt-1">{log.waktu}</p>
                       )}
                     </div>
-                    <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase border ${
-                      log.tipe === 'Umum' ? 'bg-blue-50 text-[var(--primary-600)] border-blue-100' : 'bg-purple-50 text-[var(--purple-600)] border-purple-100'
+                    <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${
+                      log.tipe === 'Umum' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
                     }`}>
                       {log.tipe}
                     </div>
                   </div>
-                  
                   {user.role === 'admin' && (
-                    <div className="flex gap-2 mt-4 pt-4 border-t border-slate-50 justify-end">
+                    <div className="flex gap-2 mt-3 pt-3 border-t border-gray-100">
                       {editingId === log.id ? (
-                        <>
-                          <button onClick={() => setEditingId(null)} className="px-4 py-2 text-slate-500 font-bold text-xs">Batal</button>
-                          <button onClick={() => saveEdit(log.id)} className="px-4 py-2 bg-[var(--primary-600)] text-white rounded-xl font-bold text-xs shadow-md"><Check size={16}/></button>
-                        </>
+                        <button
+                          onClick={() => saveEdit(log.id)}
+                          className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 active:scale-95 transition-all"
+                        >
+                          <Check size={16} />
+                        </button>
                       ) : (
-                        <>
-                          <button onClick={() => { setEditingId(log.id); setEditForm({aksi: log.aksi, waktu: log.waktu}); }} className="p-2 text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit3 size={18} /></button>
-                          <button onClick={() => deleteLog(log.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18} /></button>
-                        </>
+                        <button
+                          onClick={() => {
+                            setEditingId(log.id);
+                            setEditForm({aksi: log.aksi, waktu: log.waktu});
+                          }}
+                          className="p-2 text-blue-400 hover:bg-blue-50 rounded-lg transition-all"
+                        >
+                          <Edit3 size={16} />
+                        </button>
                       )}
+                      <button
+                        onClick={() => deleteLog(log.id)}
+                        className="p-2 text-rose-300 hover:bg-rose-50 rounded-lg transition-all"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
                   )}
                 </div>
               ))}
             </div>
 
+            {/* Salary Summary (Admin Only for Live) */}
             {user.role === 'admin' && activeHistoryTab === 'Live' && (
-              <div className="bg-slate-900 text-white rounded-[2.5rem] p-8 space-y-5 shadow-2xl">
-                <h3 className="text-xl font-black flex items-center gap-3">
-                  <Wallet className="text-emerald-400" />
-                  Rekap Gaji Live
+              <div className="bg-gradient-to-br from-purple-500 to-purple-600 text-white rounded-3xl p-6 space-y-4 shadow-xl">
+                <h3 className="text-lg font-black flex items-center gap-2">
+                  <Wallet size={20} />
+                  Detail Gaji Live
                 </h3>
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {Object.entries(rekapData)
                     .filter(([nama]) => filterName === 'Semua' || nama === filterName)
                     .map(([nama, data]) => (
-                      <div key={nama} className="bg-white/5 border border-white/10 rounded-3xl p-5">
-                        <div className="flex justify-between items-center mb-1">
-                          <h4 className="font-black text-lg text-emerald-400">{nama}</h4>
-                          <span className="text-[10px] font-black uppercase opacity-60 tracking-widest">{data.jam.toFixed(1)} Jam</span>
+                      <div key={nama} className="bg-white/10 backdrop-blur rounded-2xl p-4">
+                        <div className="flex justify-between items-start mb-2">
+                          <h4 className="font-black text-lg">{nama}</h4>
+                          <span className="text-xs font-semibold opacity-80">{data.jam.toFixed(1)} Jam Kerja</span>
                         </div>
-                        <div className="text-3xl font-black tracking-tighter">
+                        <div className="text-2xl font-black">
                           Rp {Math.round(data.gaji).toLocaleString('id-ID')}
                         </div>
                         {data.lupaOut > 0 && (
-                          <div className="mt-3 flex items-center gap-2 text-[10px] font-black text-amber-400 bg-amber-400/10 px-3 py-1.5 rounded-full w-fit uppercase">
+                          <div className="mt-2 flex items-center gap-2 text-xs font-semibold bg-amber-500/20 px-3 py-1 rounded-full w-fit">
                             <AlertTriangle size={12} />
-                            {data.lupaOut} Isu Tanpa Out
+                            {data.lupaOut} Isu Out
                           </div>
                         )}
                       </div>
@@ -576,36 +561,38 @@ const App = () => {
         )}
       </div>
 
+      {/* Status Message */}
       {statusMessage && (
-        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-8 py-4 rounded-2xl font-black text-xs shadow-2xl z-[100] transition-all transform animate-bounce ${
-          statusMessage.type === 'success' ? 'bg-[var(--success-600)] text-white' : 'bg-[var(--danger-600)] text-white'
+        <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl font-black text-xs shadow-2xl ${
+          statusMessage.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
         }`}>
           {statusMessage.msg}
         </div>
       )}
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-[0_-10px_30px_rgba(0,0,0,0.05)] z-40">
-        <div className="max-w-2xl mx-auto px-6 py-4 flex gap-3">
+      {/* Bottom Navigation */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-2xl">
+        <div className="max-w-2xl mx-auto px-6 py-3 flex gap-2">
           <button
             onClick={() => setCurrentPage('absen')}
-            className={`flex-1 py-3 rounded-[1.5rem] flex flex-col items-center gap-1 transition-all ${
-              currentPage === 'absen' ? 'bg-[var(--primary-600)] text-white shadow-lg' : 'text-slate-400'
+            className={`flex-1 py-3 rounded-[2rem] flex flex-col items-center transition-all ${
+              currentPage === 'absen' ? 'bg-blue-600 text-white' : 'text-gray-400'
             }`}
           >
             <Clock size={20} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Absen</span>
+            <span className="text-[10px] font-black uppercase mt-1">Absen</span>
           </button>
           <button
             onClick={() => setCurrentPage('history')}
-            className={`flex-1 py-3 rounded-[1.5rem] flex flex-col items-center gap-1 transition-all ${
-              currentPage === 'history' ? 'bg-[var(--primary-600)] text-white shadow-lg' : 'text-slate-400'
+            className={`flex-1 py-3 rounded-[2rem] flex flex-col items-center transition-all ${
+              currentPage === 'history' ? 'bg-blue-600 text-white' : 'text-gray-400'
             }`}
           >
             <History size={20} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Audit</span>
+            <span className="text-[10px] font-black uppercase mt-1">Audit</span>
           </button>
         </div>
-      </nav>
+      </div>
     </div>
   );
 };
