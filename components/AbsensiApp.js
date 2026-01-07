@@ -18,9 +18,22 @@ if (typeof window !== 'undefined') {
     appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
   };
 
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
+  // Debug: Log config untuk cek environment variables
+  console.log('Firebase Config Check:', {
+    hasApiKey: !!firebaseConfig.apiKey,
+    hasAuthDomain: !!firebaseConfig.authDomain,
+    hasProjectId: !!firebaseConfig.projectId,
+    projectId: firebaseConfig.projectId
+  });
+
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    console.log('Firebase initialized successfully');
+  } catch (error) {
+    console.error('Firebase initialization error:', error);
+  }
 }
 
 const appId = 'avi-absensi-v1';
@@ -35,6 +48,8 @@ const App = () => {
   const [logs, setLogs] = useState([]);
   const [statusMessage, setStatusMessage] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [initError, setInitError] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(true);
 
   // Filter States
   const [activeHistoryTab, setActiveHistoryTab] = useState('Umum');
@@ -64,18 +79,36 @@ const App = () => {
 
   // Auth Initialization
   useEffect(() => {
-    if (typeof window === 'undefined' || !auth) return;
+    if (typeof window === 'undefined') return;
+    
+    console.log('Starting auth initialization...');
+    
+    // Check Firebase config
+    if (!auth) {
+      console.error('Firebase Auth not initialized!');
+      setInitError('Firebase configuration error. Please check environment variables.');
+      setIsInitializing(false);
+      return;
+    }
     
     const initAuth = async () => {
       try {
+        console.log('Signing in anonymously...');
         await signInAnonymously(auth);
+        console.log('Anonymous sign-in successful');
       } catch (err) {
-        console.error("Auth error", err);
+        console.error("Auth error:", err);
+        setInitError(`Authentication error: ${err.message}`);
+      } finally {
+        setIsInitializing(false);
       }
     };
     
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, (u) => setDbUser(u));
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      console.log('Auth state changed:', u ? 'User signed in' : 'No user');
+      setDbUser(u);
+    });
     return () => unsubscribe();
   }, []);
 
@@ -245,6 +278,49 @@ const App = () => {
     const matchMonth = log.bulanIndex === parseInt(filterMonth);
     return matchTab && matchName && matchMonth;
   });
+
+  // Show error if Firebase failed to initialize
+  if (initError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-red-50 via-orange-50 to-pink-50 flex items-center justify-center p-6">
+        <div className="w-full max-w-md">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 space-y-6">
+            <div className="text-center space-y-2">
+              <div className="inline-flex items-center justify-center w-16 h-16 bg-red-600 text-white rounded-2xl mb-4">
+                <AlertTriangle size={32} />
+              </div>
+              <h1 className="text-3xl font-black text-gray-800">Configuration Error</h1>
+              <p className="text-xs text-red-600 font-semibold">
+                {initError}
+              </p>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+              <p className="text-xs text-red-800 font-semibold mb-2">Troubleshooting:</p>
+              <ol className="text-xs text-red-700 space-y-1 list-decimal list-inside">
+                <li>Check Vercel Environment Variables</li>
+                <li>Ensure Firebase Authentication is enabled</li>
+                <li>Verify Firebase project settings</li>
+                <li>Check browser console (F12) for details</li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show loading while initializing
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 via-purple-50 to-pink-50 flex items-center justify-center p-6">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 font-bold text-lg">Initializing AVI-ABSENSI...</p>
+          <p className="text-gray-500 text-sm mt-2">Connecting to Firebase</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!user) {
     return (
