@@ -428,10 +428,19 @@ const App = () => {
           new Date(l.timestamp).toLocaleDateString('id-ID') === logDateStr && 
           l.timestamp > log.timestamp
         );
-        if (pair) {
-          const diff = (pair.timestamp - log.timestamp) / (1000 * 60 * 60);
-          userSummary[log.nama].jamLive += diff;
-          userSummary[log.nama].gajiLive += diff * UPAH_PER_JAM;
+        const selisihMilidetik = pair.timestamp - log.timestamp;
+        const totalMenit = selisihMilidetik / (1000 * 60);
+        const jamMurni = Math.floor(totalMenit / 60);
+        const sisaMenit = totalMenit % 60;
+
+        // LOGIKA PEMBULATAN:
+        // Jika sisa menit >= 30, maka dihitung 1 jam (dibulatkan ke atas)
+        // Jika sisa menit < 30, maka sisa menit dibuang (dibulatkan ke bawah)
+        const jamDibulatkan = sisaMenit >= 50 ? jamMurni + 1 : jamMurni;
+
+        if (jamDibulatkan > 0) {
+          userSummary[log.nama].jamLive += jamDibulatkan;
+          userSummary[log.nama].gajiLive += jamDibulatkan * 25000; 
         }
       }
     });
