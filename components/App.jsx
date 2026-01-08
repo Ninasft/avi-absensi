@@ -286,57 +286,42 @@ const App = () => {
 
   const updatePassword = async (targetUsername = null, targetPass = null) => {
     const isSelf = !targetUsername;
-    const finalUsername = isSelf ? appUser.username : targetUsername;
+    const finalUsername = isSelf ? appUser?.username : targetUsername; // Gunakan optional chaining
     const finalPass = isSelf ? newPass : targetPass;
-
+  
+    // 1. Validasi Input
     if (!finalUsername) {
-      showAlert("Gagal Memperbarui", "Silakan pilih pegawai terlebih dahulu.", "error");
+      showAlert("Gagal Memperbarui", "Username tidak ditemukan.", "error");
       return;
     }
-
-    if (!finalPass || finalPass.trim() === "") {
-      showAlert("Gagal Memperbarui", "Password tidak boleh kosong.", "error");
+  
+    if (!finalPass || finalPass.trim().length < 4) {
+      showAlert("Gagal Memperbarui", "Password minimal 4 karakter.", "error");
       return;
     }
-
-    if (finalPass.length < 4) {
-      showAlert("Gagal Memperbarui", "Password minimal harus 4 karakter untuk keamanan.", "error");
-      return;
-    }
-
+  
     setIsLoading(true);
-
+  
     try {
-      await setUserConfig(finalUsername, finalPass);
-
+      // 2. Pastikan argumen yang dikirim adalah string murni
+      await setUserConfig(String(finalUsername), String(finalPass));
+  
       if (!isSelf) {
         await addAdminLog(appUser.nama, `Reset password user: ${finalUsername}`);
       }
-
+  
       if (isSelf) {
-        showAlert("Password Berhasil Diperbarui! ✓", `Password Anda telah berhasil diubah. Silakan gunakan password baru untuk login berikutnya.`, "success");
+        showAlert("Berhasil", "Password Anda telah diperbarui.", "success");
         setNewPass("");
       } else {
-        showAlert("Reset Password Berhasil! ✓", `Password untuk ${finalUsername} telah berhasil direset. User dapat login dengan password baru.`, "success");
+        showAlert("Berhasil", `Password ${finalUsername} telah direset.`, "success");
         setResetPassTarget({ username: '', password: '' });
       }
-
+  
     } catch (error) {
       console.error("Password update error:", error);
-      
-      let errorMessage = "Terjadi kesalahan saat memperbarui password. ";
-      
-      if (error.code === 'permission-denied') {
-        errorMessage += "Anda tidak memiliki izin untuk melakukan aksi ini.";
-      } else if (error.code === 'unavailable') {
-        errorMessage += "Koneksi ke server terputus. Periksa koneksi internet Anda.";
-      } else if (error.message) {
-        errorMessage += error.message;
-      } else {
-        errorMessage += "Silakan coba lagi dalam beberapa saat.";
-      }
-
-      showAlert("Gagal Memperbarui Password", errorMessage, "error");
+      // Jika muncul error '0' column, biasanya masalah ada di fungsi setUserConfig di lib/supabase.js
+      showAlert("Gagal Memperbarui Password", error.message, "error");
     } finally {
       setIsLoading(false);
     }
