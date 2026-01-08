@@ -14,16 +14,30 @@ import { Clock, CheckCircle2, LogOut, History, Wallet, Cloud, Download, AlertTri
 let app, auth, db;
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'avi-absensi-v1';
 
-if (typeof window !== 'undefined') {
-  try {
-    const firebaseConfig = JSON.parse(__firebase_config);
-    app = initializeApp(firebaseConfig);
-    auth = getAuth(app);
-    db = getFirestore(app);
-  } catch (e) {
-    console.error("Config Error:", e);
+// Initialize Firebase
+const initFirebase = () => {
+  if (typeof window !== 'undefined' && !db) {
+    try {
+      if (typeof __firebase_config === 'undefined') {
+        console.error("Firebase config not found");
+        return false;
+      }
+      const firebaseConfig = JSON.parse(__firebase_config);
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+      console.log("Firebase initialized successfully");
+      return true;
+    } catch (e) {
+      console.error("Firebase initialization error:", e);
+      return false;
+    }
   }
-}
+  return !!db;
+};
+
+// Try to initialize immediately
+initFirebase();
 
 const App = () => {
   const [user, setUser] = useState(null);
@@ -40,6 +54,7 @@ const App = () => {
   const [alertModal, setAlertModal] = useState({ show: false, title: '', message: '', type: 'error' });
   const [isLoading, setIsLoading] = useState(false);
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
+  const [firebaseReady, setFirebaseReady] = useState(false);
   
   const [showReasonModal, setShowReasonModal] = useState(null); 
   const [reasonText, setReasonText] = useState("");
@@ -73,6 +88,34 @@ const App = () => {
     "admin": { pass: "admin123", role: 'admin' }
   };
 
+  // Check Firebase initialization
+  useEffect(() => {
+    const checkFirebase = () => {
+      if (db && auth) {
+        setFirebaseReady(true);
+        return true;
+      }
+      // Try to re-initialize
+      const success = initFirebase();
+      if (success && db && auth) {
+        setFirebaseReady(true);
+        return true;
+      }
+      return false;
+    };
+
+    // Initial check
+    if (!checkFirebase()) {
+      // Retry after 1 second
+      const timer = setTimeout(() => {
+        if (!checkFirebase()) {
+          console.error("Firebase initialization failed after retry");
+        }
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
   // FIXED: Save dark mode preference
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -105,32 +148,51 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!user || !db) return;
+    if (!user || !db || !firebaseReady) return;
     
-    // User Configs & Password
-    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'user_configs'), (snap) => {
-      const configs = {};
-      snap.docs.forEach(doc => { configs[doc.id] = doc.data(); });
-      setUserConfigs(configs);
-    });
+    try {
+      // User Configs & Password
+      const unsubConfigs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'user_configs'), (snap) => {
+        const configs = {};
+        snap.docs.forEach(doc => { configs[doc.id] = doc.data(); });
+        setUserConfigs(configs);
+      }, (error) => {
+        console.error("Error loading user configs:", error);
+      });
 
-    // Absensi Logs
-    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'absensi_logs'), (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setLogs(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
-    });
+      // Absensi Logs
+      const unsubLogs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'absensi_logs'), (snap) => {
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setLogs(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+      }, (error) => {
+        console.error("Error loading logs:", error);
+      });
 
-    // Announcement
-    onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'announcement'), (doc) => {
-      if (doc.exists()) setAnnouncement(doc.data().text || "");
-    });
+      // Announcement
+      const unsubAnnouncement = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'announcement'), (doc) => {
+        if (doc.exists()) setAnnouncement(doc.data().text || "");
+      }, (error) => {
+        console.error("Error loading announcement:", error);
+      });
 
-    // Admin Activity Logs
-    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'admin_logs'), (snap) => {
-      const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAdminLogs(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
-    });
-  }, [user]);
+      // Admin Activity Logs
+      const unsubAdminLogs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'admin_logs'), (snap) => {
+        const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setAdminLogs(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+      }, (error) => {
+        console.error("Error loading admin logs:", error);
+      });
+
+      return () => {
+        unsubConfigs();
+        unsubLogs();
+        unsubAnnouncement();
+        unsubAdminLogs();
+      };
+    } catch (error) {
+      console.error("Error setting up listeners:", error);
+    }
+  }, [user, firebaseReady]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -489,6 +551,22 @@ const App = () => {
   return (
     <div className={`min-h-screen transition-all ${darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans pb-24 md:pb-0`}>
       
+      {/* FIREBASE LOADING STATE */}
+      {!firebaseReady && !appUser && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 backdrop-blur-lg">
+          <div className="text-center">
+            <div className="w-20 h-20 bg-orange-500 rounded-2xl flex items-center justify-center text-white font-black text-4xl mx-auto mb-6 shadow-xl shadow-orange-500/20 animate-pulse">A</div>
+            <h2 className="text-2xl font-black text-white mb-2">Memuat Sistem...</h2>
+            <p className="text-sm text-white/60">Menghubungkan ke database</p>
+            <div className="mt-6 flex gap-2 justify-center">
+              <div className="w-3 h-3 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-3 h-3 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-3 h-3 bg-orange-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       <header className={`sticky top-0 z-40 w-full px-4 md:px-8 py-4 shadow-lg flex items-center justify-between border-b ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-indigo-950 text-white border-transparent'}`}>
         <div className="flex items-center gap-3">
