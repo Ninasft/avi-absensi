@@ -377,7 +377,6 @@ const App = () => {
   // ============================================
 
   const stats = useMemo(() => {
-    const todayStr = new Date().toLocaleDateString('id-ID');
     const filtered = logs.filter(l => l.bulan_index === parseInt(filterMonth));
     
     const userSummary = {};
@@ -394,16 +393,23 @@ const App = () => {
     filtered.forEach(log => {
       if (!userSummary[log.nama]) return;
       const logDateStr = new Date(log.timestamp).toLocaleDateString('id-ID');
+      const todayStr = new Date().toLocaleDateString('id-ID');
       
       userSummary[log.nama].logs.push(log);
+
+      // Logika Status Hari Ini untuk Admin
+      if (logDateStr === todayStr && log.tipe === 'Umum') {
+        userSummary[log.nama].statusHariIni = log.aksi;
+        if (log.aksi === 'Masuk') userSummary[log.nama].clockIn = log.waktu;
+        if (log.aksi === 'Pulang') userSummary[log.nama].clockOut = log.waktu;
+        if (log.keterangan !== '-') userSummary[log.nama].keteranganHariIni = log.keterangan;
+      }
 
       if (log.tipe === 'Umum') {
         if (log.aksi === 'Izin') userSummary[log.nama].izin++;
         if (log.aksi === 'Sakit') userSummary[log.nama].sakit++;
         
-        // KRITERIA HADIR: Harus ada Masuk DAN Pulang di tanggal yang sama
         if (log.aksi === 'Masuk') {
-          const logDateStr = new Date(log.timestamp).toLocaleDateString('id-ID');
           const hasPulang = logs.some(l => 
             l.nama === log.nama && 
             l.tipe === 'Umum' && 
@@ -411,8 +417,8 @@ const App = () => {
             new Date(l.timestamp).toLocaleDateString('id-ID') === logDateStr
           );
           if (hasPulang) userSummary[log.nama].hadir++;
+        }
       }
-    }
 
       if (log.tipe === 'Live' && log.aksi === 'Masuk') {
         const pair = logs.find(l => 
@@ -903,7 +909,7 @@ const App = () => {
                    <h3 className="text-xl font-black uppercase tracking-tight">Status Absensi Umum</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {allUsersFromDB.filter(p => p.bisa_umum).map(p => {
+                {daftarPegawai.filter(p => p.akses.includes('Umum')).map(p => {
                     const s = stats[p.nama] || {};
                     return (
                       <div key={p.id} className={`${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} p-6 rounded-[2.5rem] border-2 shadow-sm relative group overflow-hidden`}>
