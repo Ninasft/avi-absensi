@@ -463,10 +463,10 @@ const App = () => {
     
     const today = new Date().toLocaleDateString('id-ID');
     
-    // Pastikan filter menggunakan absensiType agar sesi Umum & Live terpisah
+    // PERBAIKAN: Tambahkan filter log.tipe === absensiType
     const userLogsToday = logs.filter(log => 
       log.nama === appUser?.nama && 
-      log.tipe === absensiType && // Memisahkan pengecekan berdasarkan tab yang aktif
+      log.tipe === absensiType && // Memisahkan pengecekan antara Umum dan Live
       new Date(log.timestamp).toLocaleDateString('id-ID') === today
     );
 
@@ -475,7 +475,7 @@ const App = () => {
 
     return { hasClockIn, hasClockOut };
     
-    // PENTING: Tambahkan absensiType di dalam array dependency di bawah ini!
+    // PENTING: Tambahkan absensiType di dalam array ini agar status dihitung ulang saat pindah tab
   }, [logs, appUser, absensiType]);
   // ============================================
   // RENDER
@@ -625,11 +625,19 @@ const App = () => {
                 {/* Tombol Pulang */}
                 <button 
                   onClick={() => handleAbsen('Pulang')} 
-                  // Tombol akan menyala jika sudah Clock In di sesi tersebut DAN belum Clock Out di sesi tersebut
+                  // Tombol hanya akan mati jika:
+                  // 1. Sedang loading
+                  // 2. BELUM klik Masuk di sesi ini
+                  // 3. SUDAH klik Pulang di sesi ini
                   disabled={isLoading || !todayStatus.hasClockIn || todayStatus.hasClockOut} 
-                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 disabled:bg-slate-300 ${todayStatus.hasClockOut ? 'bg-slate-300 text-slate-500' : 'bg-rose-600 text-white'}`}
+                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all ${
+                    (!todayStatus.hasClockIn || todayStatus.hasClockOut)
+                      ? 'bg-slate-200 text-slate-400' 
+                      : 'bg-rose-600 text-white shadow-xl shadow-rose-500/20'
+                  }`}
                 >
-                  {todayStatus.hasClockOut ? 'Sudah Pulang' : 'Clock Out'}
+                  <LogOut size={32} />
+                  <span>{todayStatus.hasClockOut ? 'Sudah Pulang' : 'Clock Out'}</span>
                 </button>
               </div>
               
