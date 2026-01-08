@@ -412,7 +412,7 @@ const App = () => {
           );
           if (hasPulang) userSummary[log.nama].hadir++;
       }
-    }s
+    }
 
       if (log.tipe === 'Live' && log.aksi === 'Masuk') {
         const pair = logs.find(l => 
