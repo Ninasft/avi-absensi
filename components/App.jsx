@@ -442,35 +442,66 @@ const App = () => {
   }, [appUser]);
 
   const attendanceStatus = useMemo(() => {
-    if (!appUser) return { canIn: false, canOut: false, incomplete: null, isSunday: false };
+    if (!appUser) return { canIn: false, canOut: false, incomplete: null, isSunday: false, message: "" };
 
     const today = new Date();
     const isSunday = today.getDay() === 0;
     const todayStr = today.toLocaleDateString('id-ID');
+    const currentHour = today.getHours();
 
-    // Ambil semua log milik user ini untuk tipe yang dipilih (Umum/Live)
     const userLogs = logs.filter(l => l.nama === appUser.nama && l.tipe === absensiType);
-
-    // Filter log khusus hari ini
     const logsToday = userLogs.filter(l => new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr);
 
     const hasIn = logsToday.some(l => l.aksi === 'Masuk');
     const hasOut = logsToday.some(l => l.aksi === 'Pulang');
     const isExcused = logsToday.some(l => l.aksi === 'Izin' || l.aksi === 'Sakit');
 
-    // Cek apakah ada "Hutang" absen: Masuk di hari sebelumnya tapi belum Pulang
     const sortedLogs = [...userLogs].sort((a, b) => b.timestamp - a.timestamp);
     const lastLog = sortedLogs[0];
     const isIncomplete = (lastLog && lastLog.aksi === 'Masuk' && new Date(lastLog.timestamp).toLocaleDateString('id-ID') !== todayStr) ? lastLog : null;
 
+    // --- LOGIKA PEMBATASAN WAKTU ---
+    let timeMessage = "";
+    let timeCanIn = false;
+    let timeCanOut = false;
+
+    if (absensiType === 'Umum') {
+      // Masuk Umum: Minimal Jam 08:00
+      if (currentHour < 8) {
+        timeMessage = "Absensi UMUM baru bisa dimulai jam 08:00 pagi.";
+      } else {
+        timeCanIn = true;
+      }
+      // Pulang Umum: Minimal Jam 16:00
+      if (currentHour < 16) {
+        timeMessage = hasIn ? "Clock Out UMUM baru bisa dilakukan jam 16:00." : timeMessage;
+      } else {
+        timeCanOut = true;
+      }
+    } else if (absensiType === 'Live') {
+      // Masuk Live: Minimal Jam 13:00
+      if (currentHour < 13) {
+        timeMessage = "Absensi LIVE baru bisa dimulai jam 13:00 siang.";
+      } else {
+        timeCanIn = true;
+      }
+      // Pulang Live: Minimal Jam 17:00
+      if (currentHour < 17) {
+        timeMessage = hasIn ? "Clock Out LIVE baru bisa dilakukan jam 17:00 sore." : timeMessage;
+      } else {
+        timeCanOut = true;
+      }
+    }
+
     return {
-      canIn: !hasIn && !isExcused && !isIncomplete && !isSunday,
-      canOut: hasIn && !hasOut && !isExcused,
+      canIn: !hasIn && !isExcused && !isIncomplete && !isSunday && timeCanIn,
+      canOut: hasIn && !hasOut && !isExcused && timeCanOut,
       hasIn,
       hasOut,
       isExcused,
       incomplete: isIncomplete,
-      isSunday
+      isSunday,
+      message: timeMessage
     };
   }, [logs, appUser, absensiType]);
   // ============================================
@@ -624,7 +655,14 @@ const App = () => {
     
   </div>
 )}
-
+              {/* PESAN VALIDASI WAKTU */}
+              {!attendanceStatus.canIn && !attendanceStatus.canOut && !attendanceStatus.hasOut && !attendanceStatus.isSunday && !attendanceStatus.incomplete && (
+                <div className={`mb-4 p-4 rounded-2xl border-2 border-dashed text-center ${darkMode ? 'border-slate-700 bg-slate-800/50' : 'border-slate-200 bg-slate-50'}`}>
+                  <p className="text-[10px] font-black uppercase text-orange-500 leading-relaxed">
+                    {attendanceStatus.message || "Belum saatnya melakukan aktivitas absensi"}
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 {/* Tombol Masuk */}
                 <button 
