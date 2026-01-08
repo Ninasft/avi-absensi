@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 
 /* ====================== SUPABASE CONFIG & HELPERS ====================== */
-const firebaseConfig = JSON.parse(__firebase_config || '{}');
 const supabaseUrl = ''; // Placeholder as we use the environment's DB pattern
 const supabaseKey = '';
 const supabase = { 
