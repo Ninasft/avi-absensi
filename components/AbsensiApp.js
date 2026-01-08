@@ -20,24 +20,22 @@ let db;
 const initFirebase = () => {
   if (typeof window === "undefined") return false;
 
-  if (app && auth && db) {
-    return true;
-  }
+  if (app && auth && db) return true;
 
   try {
     console.log("🔥 Starting Firebase initialization...");
 
     const firebaseConfig = {
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID,
+      apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+      authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+      appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
     };
 
     if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-      console.error("❌ Firebase env variables are missing");
+      console.error("❌ Firebase ENV missing");
       console.table(firebaseConfig);
       return false;
     }
@@ -46,7 +44,7 @@ const initFirebase = () => {
     auth = getAuth(app);
     db = getFirestore(app);
 
-    console.log("🎉 Firebase initialized successfully");
+    console.log("🎉 Firebase initialized");
     return true;
   } catch (err) {
     console.error("❌ Firebase init failed:", err);
@@ -63,6 +61,7 @@ export const getFirebaseDB = () => {
   if (!db) initFirebase();
   return db;
 };
+
 
 
 const App = () => {
