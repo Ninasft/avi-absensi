@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, query, orderBy, limit, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 import { Clock, CheckCircle2, LogOut, History, Wallet, Cloud, Download, AlertTriangle, Settings, Key, User, ShieldCheck, TrendingUp, Sun, Moon, Megaphone, Activity, Users, Video, Calendar, Thermometer, Info, ChevronRight, LayoutDashboard, XCircle, AlertCircle, FileText, Lock, MessageSquare, ListFilter, Save, RefreshCw, Trash2, Eye, Inbox } from 'lucide-react';
 
 /* AVI-ABSENSI ULTIMATE VERSION - FULLY FIXED
@@ -11,58 +12,60 @@ import { Clock, CheckCircle2, LogOut, History, Wallet, Cloud, Download, AlertTri
   - All Bugs Fixed & Enhanced UX.
 */
 
-let app, auth, db;
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'avi-absensi-v1';
+let app;
+let auth;
+let db;
 
-// Initialize Firebase
-const initFirebase = () => {
-  if (typeof window !== 'undefined' && !db) {
-    try {
-      console.log("🔥 Starting Firebase initialization...");
-      
-      if (typeof __firebase_config === 'undefined') {
-        console.error("❌ Firebase config not found - __firebase_config is undefined");
-        return false;
-      }
-      
-      console.log("✓ Firebase config found");
-      const firebaseConfig = JSON.parse(__firebase_config);
-      console.log("✓ Firebase config parsed successfully");
-      console.log("📊 Project ID:", firebaseConfig.projectId || "Not specified");
-      
-      app = initializeApp(firebaseConfig);
-      console.log("✓ Firebase App initialized");
-      
-      auth = getAuth(app);
-      console.log("✓ Firebase Auth initialized");
-      
-      db = getFirestore(app);
-      console.log("✓ Firestore initialized");
-      
-      console.log("🎉 Firebase initialization SUCCESS!");
-      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      return true;
-    } catch (e) {
-      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      console.error("❌ Firebase initialization FAILED");
-      console.error("Error details:", e);
-      console.error("Error message:", e.message);
-      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-      return false;
-    }
-  }
-  
-  if (db) {
-    console.log("✓ Firebase already initialized");
+export const initFirebase = () => {
+  if (typeof window === "undefined") return false;
+
+  // Cegah init ulang
+  if (app && auth && db) {
     return true;
   }
-  
-  return false;
+
+  try {
+    console.log("🔥 Initializing Firebase...");
+
+    const firebaseConfig = {
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    };
+
+    // VALIDASI ENV (WAJIB ADA)
+    if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
+      console.error("❌ Firebase env variables are missing");
+      console.table(firebaseConfig);
+      return false;
+    }
+
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+
+    console.log("🎉 Firebase initialized successfully");
+    return true;
+  } catch (error) {
+    console.error("❌ Firebase initialization failed:", error);
+    return false;
+  }
 };
 
-// Try to initialize immediately
-console.log("🚀 Attempting Firebase initialization on load...");
-initFirebase();
+// Export getter (aman dipanggil di mana aja)
+export const getFirebaseAuth = () => {
+  if (!auth) initFirebase();
+  return auth;
+};
+
+export const getFirebaseDB = () => {
+  if (!db) initFirebase();
+  return db;
+};
+
 
 const App = () => {
   const [user, setUser] = useState(null);
