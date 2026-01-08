@@ -13,9 +13,9 @@ import {
 
 /* AVI-ABSENSI ULTIMATE VERSION */
 
-let app;
-let auth;
-let db;
+let app, auth, db;
+
+const appId = process.env.NEXT_PUBLIC_APP_ID || "avi-absensi";
 
 const initFirebase = () => {
   if (typeof window === "undefined") return false;
@@ -23,8 +23,6 @@ const initFirebase = () => {
   if (app && auth && db) return true;
 
   try {
-    console.log("🔥 Starting Firebase initialization...");
-
     const firebaseConfig = {
       apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
       authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -35,8 +33,7 @@ const initFirebase = () => {
     };
 
     if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
-      console.error("❌ Firebase ENV missing");
-      console.table(firebaseConfig);
+      console.error("❌ Firebase env missing");
       return false;
     }
 
@@ -44,22 +41,11 @@ const initFirebase = () => {
     auth = getAuth(app);
     db = getFirestore(app);
 
-    console.log("🎉 Firebase initialized");
     return true;
-  } catch (err) {
-    console.error("❌ Firebase init failed:", err);
+  } catch (e) {
+    console.error("Firebase init failed:", e);
     return false;
   }
-};
-
-export const getFirebaseAuth = () => {
-  if (!auth) initFirebase();
-  return auth;
-};
-
-export const getFirebaseDB = () => {
-  if (!db) initFirebase();
-  return db;
 };
 
 
