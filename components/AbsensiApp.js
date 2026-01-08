@@ -18,25 +18,50 @@ const appId = typeof __app_id !== 'undefined' ? __app_id : 'avi-absensi-v1';
 const initFirebase = () => {
   if (typeof window !== 'undefined' && !db) {
     try {
+      console.log("🔥 Starting Firebase initialization...");
+      
       if (typeof __firebase_config === 'undefined') {
-        console.error("Firebase config not found");
+        console.error("❌ Firebase config not found - __firebase_config is undefined");
         return false;
       }
+      
+      console.log("✓ Firebase config found");
       const firebaseConfig = JSON.parse(__firebase_config);
+      console.log("✓ Firebase config parsed successfully");
+      console.log("📊 Project ID:", firebaseConfig.projectId || "Not specified");
+      
       app = initializeApp(firebaseConfig);
+      console.log("✓ Firebase App initialized");
+      
       auth = getAuth(app);
+      console.log("✓ Firebase Auth initialized");
+      
       db = getFirestore(app);
-      console.log("Firebase initialized successfully");
+      console.log("✓ Firestore initialized");
+      
+      console.log("🎉 Firebase initialization SUCCESS!");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       return true;
     } catch (e) {
-      console.error("Firebase initialization error:", e);
+      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.error("❌ Firebase initialization FAILED");
+      console.error("Error details:", e);
+      console.error("Error message:", e.message);
+      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
       return false;
     }
   }
-  return !!db;
+  
+  if (db) {
+    console.log("✓ Firebase already initialized");
+    return true;
+  }
+  
+  return false;
 };
 
 // Try to initialize immediately
+console.log("🚀 Attempting Firebase initialization on load...");
 initFirebase();
 
 const App = () => {
@@ -90,26 +115,42 @@ const App = () => {
 
   // Check Firebase initialization
   useEffect(() => {
+    console.log("🔍 Checking Firebase status in useEffect...");
+    
     const checkFirebase = () => {
+      console.log("Checking: db =", !!db, "auth =", !!auth);
+      
       if (db && auth) {
+        console.log("✅ Firebase is READY!");
         setFirebaseReady(true);
         return true;
       }
+      
+      console.log("⚠️ Firebase not ready, attempting re-initialization...");
       // Try to re-initialize
       const success = initFirebase();
       if (success && db && auth) {
+        console.log("✅ Re-initialization SUCCESS!");
         setFirebaseReady(true);
         return true;
       }
+      
+      console.log("❌ Re-initialization failed");
       return false;
     };
 
     // Initial check
     if (!checkFirebase()) {
+      console.log("⏳ Retrying in 1 second...");
       // Retry after 1 second
       const timer = setTimeout(() => {
+        console.log("🔄 Retry attempt starting...");
         if (!checkFirebase()) {
-          console.error("Firebase initialization failed after retry");
+          console.error("💥 Firebase initialization FAILED after retry");
+          console.error("Please check:");
+          console.error("1. Is __firebase_config defined?");
+          console.error("2. Is the Firebase config valid JSON?");
+          console.error("3. Are all required Firebase fields present?");
         }
       }, 1000);
       return () => clearTimeout(timer);
@@ -148,49 +189,72 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    if (!user || !db || !firebaseReady) return;
+    console.log("📡 Setting up Firebase listeners...");
+    console.log("Conditions: user =", !!user, "db =", !!db, "firebaseReady =", firebaseReady);
+    
+    if (!user || !db || !firebaseReady) {
+      console.log("⏸️ Skipping listeners setup (conditions not met)");
+      return;
+    }
+    
+    console.log("✓ All conditions met, setting up listeners...");
     
     try {
       // User Configs & Password
+      console.log("📝 Setting up user_configs listener...");
       const unsubConfigs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'user_configs'), (snap) => {
         const configs = {};
         snap.docs.forEach(doc => { configs[doc.id] = doc.data(); });
         setUserConfigs(configs);
+        console.log("✓ User configs loaded:", Object.keys(configs).length, "users");
       }, (error) => {
-        console.error("Error loading user configs:", error);
+        console.error("❌ Error loading user configs:", error);
       });
 
       // Absensi Logs
+      console.log("📋 Setting up absensi_logs listener...");
       const unsubLogs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'absensi_logs'), (snap) => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setLogs(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+        console.log("✓ Absensi logs loaded:", data.length, "records");
       }, (error) => {
-        console.error("Error loading logs:", error);
+        console.error("❌ Error loading logs:", error);
       });
 
       // Announcement
+      console.log("📢 Setting up announcement listener...");
       const unsubAnnouncement = onSnapshot(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'announcement'), (doc) => {
-        if (doc.exists()) setAnnouncement(doc.data().text || "");
+        if (doc.exists()) {
+          setAnnouncement(doc.data().text || "");
+          console.log("✓ Announcement loaded");
+        } else {
+          console.log("ℹ️ No announcement found");
+        }
       }, (error) => {
-        console.error("Error loading announcement:", error);
+        console.error("❌ Error loading announcement:", error);
       });
 
       // Admin Activity Logs
+      console.log("🔐 Setting up admin_logs listener...");
       const unsubAdminLogs = onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'admin_logs'), (snap) => {
         const data = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setAdminLogs(data.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+        console.log("✓ Admin logs loaded:", data.length, "records");
       }, (error) => {
-        console.error("Error loading admin logs:", error);
+        console.error("❌ Error loading admin logs:", error);
       });
 
+      console.log("🎉 All Firebase listeners set up successfully!");
+
       return () => {
+        console.log("🔌 Unsubscribing from Firebase listeners...");
         unsubConfigs();
         unsubLogs();
         unsubAnnouncement();
         unsubAdminLogs();
       };
     } catch (error) {
-      console.error("Error setting up listeners:", error);
+      console.error("💥 Error setting up listeners:", error);
     }
   }, [user, firebaseReady]);
 
@@ -575,7 +639,14 @@ const App = () => {
           </div>
           <div className="flex flex-col">
             <h1 className="text-base md:text-xl font-black uppercase tracking-tight leading-none">AVI-ABSENSI <span className="text-[10px] text-orange-400 font-bold ml-1">PRO</span></h1>
-            <p className="text-[9px] font-bold opacity-60 uppercase tracking-widest mt-1 hidden md:block">Avicenna Ultimate Management</p>
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-[9px] font-bold opacity-60 uppercase tracking-widest hidden md:block">Avicenna Ultimate Management</p>
+              {/* Firebase Status Indicator */}
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-white/10">
+                <div className={`w-1.5 h-1.5 rounded-full ${firebaseReady ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`}></div>
+                <span className="text-[8px] font-bold uppercase tracking-wider">{firebaseReady ? 'Online' : 'Offline'}</span>
+              </div>
+            </div>
           </div>
         </div>
         {appUser && (
