@@ -189,6 +189,18 @@ const App = () => {
     };
   }, [supabaseReady]);
 
+  useEffect(() => {
+    const savedUser = localStorage.getItem('absensi_user');
+    if (savedUser) {
+      const parsedUser = JSON.parse(savedUser);
+      setAppUser(parsedUser);
+      
+      // Set default tab sesuai izin
+      if (!parsedUser.bisa_umum && parsedUser.bisa_live) {
+        setAbsensiType('Live');
+      }
+    }
+  }, []);
   // Clock timer
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -213,131 +225,34 @@ const App = () => {
   // ============================================
 
   const handleLogin = async (e) => {
-    e.preventDefault();
-    const username = loginInput.username.toLowerCase().trim();
-    const password = loginInput.password;
-
-    if (!username || !password) {
-      showStatus("Username dan password harus diisi", "error");
-      return;
-    }
-
+    if (e) e.preventDefault();
+    setIsLoading(true);
+  
     try {
-      const savedConfig = await getUserConfig(username);
-      const correctPass = savedConfig ? savedConfig.password : defaultCredentials[username]?.pass;
-
-      if (defaultCredentials[username] && password === correctPass) {
-        const userData = { 
-          nama: username.charAt(0).toUpperCase() + username.slice(1), 
-          role: defaultCredentials[username].role || 'pegawai',
-          username: username
-        };
-        setAppUser(userData);
-        setCurrentPage(userData.role === 'admin' ? 'history' : 'absen');
-        setLoginInput({ username: '', password: '' });
+      // Memanggil loginUser yang sudah kita buat di lib/supabase.js
+      const user = await loginUser(loginInput.username, loginInput.password);
+  
+      if (user) {
+        // User sekarang berisi: username, nama, role, bisa_umum, bisa_live
+        setAppUser(user);
+        
+        // Simpan ke browser agar tidak perlu login ulang saat refresh
+        localStorage.setItem('absensi_user', JSON.stringify(user));
+        
+        // Jika user HANYA bisa Live, otomatis arahkan tipe absen ke Live
+        if (!user.bisa_umum && user.bisa_live) {
+          setAbsensiType('Live');
+        }
+  
+        showStatus(`Selamat datang, ${user.nama}!`, "success");
       } else {
-        showStatus("Akses Ditolak: Periksa Username/Password", "error");
+        showAlert("Login Gagal", "Username atau password salah.", "error");
       }
     } catch (err) {
-      console.error('Login error:', err);
-      showStatus("Error saat login, coba lagi", "error");
-    }
-  };
-
-  const handleAbsen = async (action, note = "") => {
-    // 1. CEK KONEKSI & LOADING
-    if (isLoading || !supabaseReady) {
-      showAlert("Sistem Sibuk", "Mohon tunggu, data sedang diproses.", "warning");
-      return;
-    }
-
-    // Gunakan waktu asli sistem (JavaScript akan otomatis menyesuaikan ke waktu lokal user/WIB)
-    const nowObj = new Date();
-    const currentHour = nowObj.getHours();
-    const todayStr = nowObj.toLocaleDateString('id-ID');
-    const timestamp = nowObj.getTime();
-
-    setIsLoading(true);
-
-    // 2. CEK RIWAYAT HARI INI
-    const userLogsToday = logs.filter(l => 
-      l.nama === appUser.nama && 
-      l.tipe === absensiType && 
-      new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr
-    );
-
-    const hasClockIn = userLogsToday.some(l => l.aksi === 'Masuk');
-    const hasClockOut = userLogsToday.some(l => l.aksi === 'Pulang');
-
-    // 3. VALIDASI PESAN (SUDAH ABSEN)
-    if (action === 'Masuk' && hasClockIn) {
-      showAlert("Sudah Absen", `Halo ${appUser.nama}, Anda sudah Masuk hari ini.`, 'info');
+      console.error("Auth error:", err);
+      showAlert("Error", "Gagal menghubungkan ke server.", "error");
+    } finally {
       setIsLoading(false);
-      return;
-    }
-
-    if (action === 'Pulang' && hasClockOut) {
-      showAlert("Sudah Selesai", `Halo ${appUser.nama}, Anda sudah Pulang hari ini. Sampai jumpa besok!`, 'info');
-      setIsLoading(false);
-      return;
-    }
-
-    // 4. VALIDASI URUTAN
-    if (action === 'Pulang' && !hasClockIn) {
-      showAlert("Urutan Salah", "Anda belum absen Masuk. Silakan Masuk terlebih dahulu.", "warning");
-      setIsLoading(false);
-      return;
-    }
-
-    // 5. VALIDASI JAM (Hanya jika belum absen hari ini)
-    if (absensiType === 'Umum') {
-      if (action === 'Masuk' && currentHour < 8) {
-        showAlert("Waktu Belum Dibuka", `Absen Masuk Umum dibuka mulai jam 08:00.`, 'warning');
-        setIsLoading(false);
-        return;
-      }
-      if (action === 'Pulang' && currentHour < 16) {
-        showAlert("Belum Waktunya", `Absen Pulang Umum tersedia mulai jam 16:00.`, 'info');
-        setIsLoading(false);
-        return;
-      }
-    }
-
-    if (absensiType === 'Live') {
-      if (action === 'Masuk' && currentHour < 13) {
-        showAlert("Sesi Belum Mulai", `Absen Live baru dibuka jam 13:00.`, 'warning');
-        setIsLoading(false);
-        return;
-      }
-      if (action === 'Pulang' && currentHour < 17) {
-        showAlert("Belum Selesai", `Absen Pulang Live tersedia mulai jam 17:00.`, 'info');
-        setIsLoading(false);
-        return;
-      }
-    }
-
-    // 6. SIMPAN DATA
-    try {
-      await addAbsensiLog({
-        nama: appUser.nama,
-        tipe: absensiType,
-        aksi: action,
-        keterangan: note || "-",
-        waktu: nowObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-        tanggal_display: nowObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }),
-        bulan_index: nowObj.getMonth(),
-        timestamp: timestamp,
-        hari_index: Math.floor(timestamp / 86400000)
-      });
-      
-      showStatus(`${action} ${absensiType} Berhasil!`, "success");
-      setReasonText("");
-      setShowReasonModal(null);
-    } catch (e) {
-      console.error("Error simpan:", e);
-      showAlert("Gagal", "Terjadi kesalahan koneksi. Silakan coba lagi.", "error");
-    } finally { 
-      setIsLoading(false); 
     }
   };
 
@@ -640,13 +555,32 @@ const App = () => {
                 </p>
               </div>
 
-              {hasLiveAccess && (
-                <div className={`flex p-2 rounded-[2.5rem] border-2 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
-                  {['Umum', 'Live'].map(t => (
-                    <button key={t} onClick={() => setAbsensiType(t)} className={`flex-1 py-4 rounded-[2rem] font-black text-xs uppercase tracking-widest transition-all ${absensiType === t ? 'bg-orange-500 text-white shadow-xl shadow-orange-500/20' : 'text-slate-500'}`}>Sesi {t}</button>
-                  ))}
-                </div>
-              )}
+{/* TAB SESI (SUDAH DISESUAIKAN DENGAN USER_CONFIGS) */}
+{(appUser?.bisa_umum || appUser?.bisa_live) && (
+  <div className={`flex p-2 rounded-[2.5rem] border-2 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
+    
+    {/* Tombol Umum muncul jika diizinkan */}
+    {appUser?.bisa_umum && (
+      <button 
+        onClick={() => setAbsensiType('Umum')} 
+        className={`flex-1 py-4 rounded-[2rem] font-black text-xs uppercase tracking-widest transition-all ${absensiType === 'Umum' ? 'bg-orange-500 text-white shadow-xl shadow-orange-500/20' : 'text-slate-500'}`}
+      >
+        Sesi Umum
+      </button>
+    )}
+
+    {/* Tombol Live muncul jika diizinkan */}
+    {appUser?.bisa_live && (
+      <button 
+        onClick={() => setAbsensiType('Live')} 
+        className={`flex-1 py-4 rounded-[2rem] font-black text-xs uppercase tracking-widest transition-all ${absensiType === 'Live' ? 'bg-orange-500 text-white shadow-xl shadow-orange-500/20' : 'text-slate-500'}`}
+      >
+        Sesi Live
+      </button>
+    )}
+    
+  </div>
+)}
 
               <div className="grid grid-cols-2 gap-4">
                 {/* Tombol Masuk */}
