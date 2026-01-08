@@ -436,10 +436,10 @@ const App = () => {
     
     const today = new Date().toLocaleDateString('id-ID');
     
-    // Tambahkan filter l.tipe === absensiType agar sesi Umum dan Live terpisah
+    // Pastikan filter menggunakan absensiType agar sesi Umum & Live terpisah
     const userLogsToday = logs.filter(log => 
       log.nama === appUser?.nama && 
-      log.tipe === absensiType && // Filter berdasarkan sesi yang dipilih
+      log.tipe === absensiType && // Memisahkan pengecekan berdasarkan tab yang aktif
       new Date(log.timestamp).toLocaleDateString('id-ID') === today
     );
 
@@ -447,7 +447,9 @@ const App = () => {
     const hasClockOut = userLogsToday.some(log => log.aksi === 'Pulang');
 
     return { hasClockIn, hasClockOut };
-  }, [logs, appUser, absensiType]); // Tambahkan absensiType di sini
+    
+    // PENTING: Tambahkan absensiType di dalam array dependency di bawah ini!
+  }, [logs, appUser, absensiType]);
   // ============================================
   // RENDER
   // ============================================
@@ -595,13 +597,13 @@ const App = () => {
 
                 {/* Tombol Pulang */}
                 <button 
-                  onClick={() => handleAbsen('Pulang')} 
-                  disabled={isLoading || !todayStatus.hasClockIn || todayStatus.hasClockOut} 
-                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 disabled:bg-slate-300 ${todayStatus.hasClockOut ? 'bg-slate-300 text-slate-500' : 'bg-rose-600 text-white'}`}
-                >
-                  {isLoading ? <RefreshCw size={32} className="animate-spin" /> : <Clock size={32} />} 
-                  {todayStatus.hasClockOut ? 'Sudah Pulang' : 'Clock Out'}
-                </button>
+                onClick={() => handleAbsen('Pulang')} 
+                // Tombol akan menyala jika sudah Clock In di sesi tersebut DAN belum Clock Out di sesi tersebut
+                disabled={isLoading || !todayStatus.hasClockIn || todayStatus.hasClockOut} 
+                className={...}
+              >
+                {todayStatus.hasClockOut ? 'Sudah Pulang' : 'Clock Out'}
+              </button>
               </div>
               
               {absensiType === 'Umum' && (
