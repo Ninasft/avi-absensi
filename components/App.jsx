@@ -107,7 +107,7 @@ const App = () => {
 
   useEffect(() => {
     if (!supabaseReady) return;
-
+  
     const loadData = async () => {
       try {
         const allUsernames = [...daftarPegawai.map(p => p.id), 'admin'];
@@ -116,35 +116,35 @@ const App = () => {
         const configMap = {};
         configs.forEach((cfg, i) => { if (cfg) configMap[allUsernames[i]] = cfg; });
         setUserConfigs(configMap);
-
-        const logsData = await getAbsensiLogs();
-        setLogs(logsData || []);
-
-        const announcementData = await getAnnouncement();
-        setAnnouncementState(announcementData?.text || '');
-
-        const adminLogsData = await getAdminLogs();
-        setAdminLogs(adminLogsData || []);
-      } catch (err) { console.error(err); }
+  
+        setLogs(await getAbsensiLogs() || []);
+        setAnnouncementState((await getAnnouncement())?.text || '');
+        setAdminLogs(await getAdminLogs() || []);
+      } catch (err) {
+        console.error(err);
+      }
     };
-
+  
     loadData();
-
+  
     const absensiChannel = subscribeToAbsensiLogs(async () => {
-      const logsData = await getAbsensiLogs();
-      setLogs(logsData || []);
+      setLogs(await getAbsensiLogs() || []);
     });
-
+  
     const settingsChannel = subscribeToSettings(async () => {
-      const announcementData = await getAnnouncement();
-      setAnnouncementState(announcementData?.text || '');
+      setAnnouncementState((await getAnnouncement())?.text || '');
     });
-
+  
+    const adminChannel = subscribeToAdminLogs(async () => {
+      setAdminLogs(await getAdminLogs() || []);
+    });
+  
     return () => {
       supabase.removeChannel(absensiChannel);
       supabase.removeChannel(settingsChannel);
+      supabase.removeChannel(adminChannel);
     };
-  }, [supabaseReady]);
+  }, [supabaseReady]);  
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -215,6 +215,21 @@ const App = () => {
       setIsLoading(false);
       return;
     }
+    if (action === 'Pulang') {
+      const hasMasuk = logs.some(l =>
+        l.nama === appUser.nama &&
+        l.tipe === absensiType &&
+        l.aksi === 'Masuk' &&
+        new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr
+      );
+    
+      if (!hasMasuk) {
+        showAlert("Tidak Valid", "Anda belum Clock In hari ini.", "info");
+        setIsLoading(false);
+        return;
+      }
+    }
+    
 
     try {
       await addAbsensiLog({
@@ -258,7 +273,7 @@ const App = () => {
     } catch (error) {
       showAlert("Gagal", "Terjadi kesalahan server.", "error");
     } finally {
-      setIsLoading(true);
+      setIsLoading(false);
     }
   };
 
@@ -608,10 +623,11 @@ const App = () => {
               />
               <div className="flex gap-3 mt-4">
                 <button 
-                  onClick={async () => {
-                    await setAnnouncement(announcement, appUser.nama);
-                    showStatus("Pengumuman diperbarui", "success");
-                  }}
+                onClick={async () => {
+                await setAnnouncement(announcement, appUser.nama);
+                await addAdminLog(appUser.nama, "Update pengumuman");
+                showStatus("Pengumuman diperbarui", "success");
+              }}
                   className="flex-1 bg-orange-500 text-white font-black p-4 rounded-2xl shadow-lg active:scale-95"
                 >
                   Publish Info
@@ -619,8 +635,11 @@ const App = () => {
                 <button 
                   onClick={async () => {
                     await setAnnouncement("", appUser.nama);
+                    await addAdminLog(appUser.nama, "Hapus pengumuman");
                     setAnnouncementState("");
+                    showStatus("Pengumuman dihapus", "success");
                   }}
+
                   className="p-4 rounded-2xl border-2 border-rose-500/20 text-rose-500 hover:bg-rose-500/10 font-black"
                 >
                   <Trash2 size={20} />
@@ -741,6 +760,41 @@ const App = () => {
           </div>
         </div>
       )}
+      {alertModal.show && (
+  <div className="fixed inset-0 z-[300] flex items-center justify-center p-6 backdrop-blur-md bg-black/40">
+    <div className={`w-full max-w-sm p-8 rounded-[32px] shadow-2xl ${
+      darkMode ? 'bg-zinc-900' : 'bg-white'
+    }`}>
+      <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto ${
+        alertModal.type === 'success'
+          ? 'bg-emerald-500/10 text-emerald-500'
+          : alertModal.type === 'info'
+          ? 'bg-orange-500/10 text-orange-500'
+          : 'bg-rose-500/10 text-rose-500'
+      }`}>
+        {alertModal.type === 'success'
+          ? <CheckCircle2 size={32}/>
+          : alertModal.type === 'info'
+          ? <Info size={32}/>
+          : <AlertTriangle size={32}/>}
+      </div>
+
+      <h3 className="text-lg font-black text-center mb-2">
+        {alertModal.title}
+      </h3>
+      <p className="text-sm text-center opacity-60 font-bold mb-6">
+        {alertModal.message}
+      </p>
+
+      <button
+        onClick={() => setAlertModal({ ...alertModal, show: false })}
+        className="w-full bg-orange-500 text-white font-black p-4 rounded-2xl"
+      >
+        OK
+      </button>
+    </div>
+  </div>
+)}
     </div>
   );
 };
