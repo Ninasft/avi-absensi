@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   supabase, 
+  loginUser, // <--- TAMBAHKAN INI
   getUserConfig, 
   setUserConfig,
   getAbsensiLogs,
