@@ -223,6 +223,33 @@ const App = () => {
   // ============================================
   // HANDLERS
   // ============================================
+  const handleAbsen = async (action, note = "-") => {
+    setIsLoading(true);
+    try {
+      const now = new Date();
+      const logData = {
+        nama: appUser.nama, // Ambil dari database
+        tipe: absensiType, // Penting: Umum atau Live
+        aksi: action,
+        keterangan: note,
+        waktu: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        tanggal_display: now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }),
+        bulan_index: now.getMonth(),
+        timestamp: now.getTime()
+      };
+  
+      await addAbsensiLog(logData);
+      showStatus(`Berhasil ${action} (${absensiType})`, "success");
+      
+      // Tutup modal alasan jika ada
+      setShowReasonModal(null);
+      setReasonText("");
+    } catch (err) {
+      showAlert("Gagal Absen", "Terjadi kesalahan koneksi.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleLogin = async (e) => {
     if (e) e.preventDefault();
@@ -824,7 +851,7 @@ const App = () => {
                    <h3 className="text-xl font-black uppercase tracking-tight">Status Absensi Umum</h3>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {daftarPegawai.filter(p => p.akses.includes('Umum')).map(p => {
+                  {allUsersFromDB.filter(p => p.bisa_umum).map(p => {
                     const s = stats[p.nama] || {};
                     return (
                       <div key={p.id} className={`${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} p-6 rounded-[2.5rem] border-2 shadow-sm relative group overflow-hidden`}>
