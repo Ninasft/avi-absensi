@@ -1,31 +1,31 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
+import { getFirestore, collection, onSnapshot, addDoc, doc, setDoc, query, orderBy, limit, deleteDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import {
+  Clock, CheckCircle2, LogOut, History, Wallet, Cloud, Download,
+  AlertTriangle, Settings, Key, User, ShieldCheck, TrendingUp,
+  Sun, Moon, Megaphone, Activity, Users, Video, Calendar,
+  Thermometer, Info, ChevronRight, LayoutDashboard, XCircle,
+  AlertCircle, FileText, Lock, MessageSquare, ListFilter, Save,
+  RefreshCw, Trash2, Eye, Inbox
+} from 'lucide-react';
 
-import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
-import { Clock, CheckCircle2, LogOut, History, Wallet, Cloud, Download, AlertTriangle, Settings, Key, User, ShieldCheck, TrendingUp, Sun, Moon, Megaphone, Activity, Users, Video, Calendar, Thermometer, Info, ChevronRight, LayoutDashboard, XCircle, AlertCircle, FileText, Lock, MessageSquare, ListFilter, Save, RefreshCw, Trash2, Eye, Inbox } from 'lucide-react';
-
-/* AVI-ABSENSI ULTIMATE VERSION - FULLY FIXED
-  - Admin: Dashboard Full, Pengumuman, Reset Password User, Log Aktivitas.
-  - User: Absen (Masuk 08:00, Pulang 16:00), Izin/Sakit, Riwayat Pribadi, Ganti Pass.
-  - Fully Responsive & Dark/Light Mode (Persistent).
-  - All Bugs Fixed & Enhanced UX.
-*/
+/* AVI-ABSENSI ULTIMATE VERSION */
 
 let app;
 let auth;
 let db;
 
-export const initFirebase = () => {
+const initFirebase = () => {
   if (typeof window === "undefined") return false;
 
-  // Cegah init ulang
   if (app && auth && db) {
     return true;
   }
 
   try {
-    console.log("🔥 Initializing Firebase...");
+    console.log("🔥 Starting Firebase initialization...");
 
     const firebaseConfig = {
       apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -36,7 +36,6 @@ export const initFirebase = () => {
       appId: import.meta.env.VITE_FIREBASE_APP_ID,
     };
 
-    // VALIDASI ENV (WAJIB ADA)
     if (!firebaseConfig.apiKey || !firebaseConfig.projectId) {
       console.error("❌ Firebase env variables are missing");
       console.table(firebaseConfig);
@@ -49,13 +48,12 @@ export const initFirebase = () => {
 
     console.log("🎉 Firebase initialized successfully");
     return true;
-  } catch (error) {
-    console.error("❌ Firebase initialization failed:", error);
+  } catch (err) {
+    console.error("❌ Firebase init failed:", err);
     return false;
   }
 };
 
-// Export getter (aman dipanggil di mana aja)
 export const getFirebaseAuth = () => {
   if (!auth) initFirebase();
   return auth;
