@@ -1,39 +1,34 @@
 import React, { useState, useEffect, useMemo } from 'react';
-// Note: We are integrating Supabase logic directly to ensure compilation success.
-import { createClient } from '@supabase/supabase-js';
-import {
-  Clock, CheckCircle2, LogOut, History, Sun, Moon, Megaphone, Users, Video,
-  Calendar, Thermometer, Info, LayoutDashboard, AlertCircle, FileText,
-  Lock, Save, RefreshCw, Trash2, Inbox, ShieldCheck, Settings, ChevronRight, User, Activity,
-  Briefcase, TrendingUp
+import { 
+  Clock, CheckCircle2, LogOut, History, Wallet, Cloud, Download,
+  AlertTriangle, Settings, Key, User, ShieldCheck, TrendingUp,
+  Sun, Moon, Megaphone, Activity, Users, Video, Calendar,
+  Thermometer, Info, ChevronRight, LayoutDashboard, XCircle,
+  AlertCircle, FileText, Lock, MessageSquare, ListFilter, Save,
+  RefreshCw, Trash2, Eye, Inbox
 } from 'lucide-react';
 
-/* ====================== SUPABASE CONFIG & HELPERS ====================== */
-const supabaseUrl = ''; // Placeholder as we use the environment's DB pattern
-const supabaseKey = '';
-const supabase = { 
-    // This is a mockup of the expected Supabase library interface 
-    // to keep the user's logic flowing while fixing the path issue.
-    from: () => ({ 
-        select: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }),
-        insert: () => Promise.resolve({ error: null }),
-        upsert: () => Promise.resolve({ error: null })
-    })
-};
+// NOTE: Import dari library eksternal diasumsikan sudah tersedia di environment Anda
+// Jika menjalankan secara mandiri, pastikan ../lib/supabase.js sudah terkonfigurasi
+import { 
+  supabase, 
+  getUserConfig, 
+  setUserConfig,
+  getAbsensiLogs,
+  addAbsensiLog,
+  getAnnouncement,
+  setAnnouncement,
+  getAdminLogs,
+  addAdminLog,
+  subscribeToAbsensiLogs,
+  subscribeToSettings,
+  subscribeToAdminLogs
+} from '../lib/supabase';
 
-// Mocking the helper functions previously in ../lib/supabase to ensure the code runs
-const getUserConfig = async (username) => null;
-const getAbsensiLogs = async () => [];
-const getAdminLogs = async () => [];
-const getAnnouncement = async () => ({ text: "" });
-const addAbsensiLog = async (data) => console.log("Logged:", data);
-const subscribeToAbsensiLogs = (fn) => null;
-const subscribeToSettings = (fn) => null;
-const subscribeToAdminLogs = (fn) => null;
-
-export default function App() {
-
-  /* ====================== STATE ====================== */
+const App = () => {
+  // ============================================
+  // STATES
+  // ============================================
   const [appUser, setAppUser] = useState(null);
   const [loginInput, setLoginInput] = useState({ username: '', password: '' });
   const [currentPage, setCurrentPage] = useState('absen');
@@ -41,470 +36,713 @@ export default function App() {
   const [absensiType, setAbsensiType] = useState('Umum');
   const [logs, setLogs] = useState([]);
   const [adminLogs, setAdminLogs] = useState([]);
-  const [announcement, setAnnouncementText] = useState('');
+  const [userConfigs, setUserConfigs] = useState({});
+  const [announcement, setAnnouncementState] = useState("");
+  const [statusMessage, setStatusMessage] = useState(null);
+  const [alertModal, setAlertModal] = useState({ show: false, title: '', message: '', type: 'error' });
   const [isLoading, setIsLoading] = useState(false);
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
-  const [supabaseReady, setSupabaseReady] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
-
-  const [alertModal, setAlertModal] = useState({
-    show: false,
-    type: 'info',
-    title: '',
-    message: ''
-  });
-
-  const [showReasonModal, setShowReasonModal] = useState(null);
-  const [reasonText, setReasonText] = useState('');
+  const [supabaseReady, setSupabaseReady] = useState(false);
+  
+  const [showReasonModal, setShowReasonModal] = useState(null); 
+  const [reasonText, setReasonText] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [resetPassTarget, setResetPassTarget] = useState({ username: '', password: '' });
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  /* ====================== CONSTANT ====================== */
+  // Dark Mode State
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('avi-absensi-darkmode');
+      return saved ? JSON.parse(saved) : false;
+    }
+    return false;
+  });
+
+  // ============================================
+  // CONSTANTS
+  // ============================================
   const UPAH_PER_JAM = 25000;
   const daftarBulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
   const daftarPegawai = [
-    { id: 'abub', nama: 'Abub', akses: ['Umum'] },
-    { id: 'rendy', nama: 'Rendy', akses: ['Umum'] },
-    { id: 'dedi', nama: 'Dedi', akses: ['Umum'] },
-    { id: 'vebi', nama: 'Vebi', akses: ['Live'] },
-    { id: 'silvi', nama: 'Silvi', akses: ['Umum', 'Live'] },
-    { id: 'aisyah', nama: 'Aisyah', akses: ['Umum', 'Live'] }
+    { id: "abub", nama: "Abub", akses: ["Umum"] },
+    { id: "rendy", nama: "Rendy", akses: ["Umum"] },
+    { id: "dedi", nama: "Dedi", akses: ["Umum"] },
+    { id: "vebi", nama: "Vebi", akses: ["Live"] },
+    { id: "silvi", nama: "Silvi", akses: ["Umum", "Live"] },
+    { id: "aisyah", nama: "Aisyah", akses: ["Umum", "Live"] }
   ];
 
   const defaultCredentials = {
-    admin: { pass: 'admin123', role: 'admin' }
+    ...daftarPegawai.reduce((acc, p) => ({ ...acc, [p.id]: { pass: p.id } }), {}),
+    "admin": { pass: "admin123", role: 'admin' }
   };
 
-  /* ====================== EFFECT ====================== */
+  // ============================================
+  // EFFECTS
+  // ============================================
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('avi-absensi-darkmode', JSON.stringify(darkMode));
+      if (darkMode) document.documentElement.classList.add('dark');
+      else document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
+  useEffect(() => {
+    const checkSupabase = async () => {
+      try {
+        const { data, error } = await supabase.from('settings').select('key').limit(1);
+        if (error) throw error;
+        setSupabaseReady(true);
+      } catch (err) {
+        setSupabaseReady(false);
+        setTimeout(checkSupabase, 2000);
+      }
+    };
+    checkSupabase();
+  }, []);
+
+  useEffect(() => {
+    if (!supabaseReady) return;
+
+    const loadData = async () => {
+      try {
+        const allUsernames = [...daftarPegawai.map(p => p.id), 'admin'];
+        const configPromises = allUsernames.map(u => getUserConfig(u));
+        const configs = await Promise.all(configPromises);
+        const configMap = {};
+        configs.forEach((cfg, i) => { if (cfg) configMap[allUsernames[i]] = cfg; });
+        setUserConfigs(configMap);
+
+        const logsData = await getAbsensiLogs();
+        setLogs(logsData || []);
+
+        const announcementData = await getAnnouncement();
+        setAnnouncementState(announcementData?.text || '');
+
+        const adminLogsData = await getAdminLogs();
+        setAdminLogs(adminLogsData || []);
+      } catch (err) { console.error(err); }
+    };
+
+    loadData();
+
+    const absensiChannel = subscribeToAbsensiLogs(async () => {
+      const logsData = await getAbsensiLogs();
+      setLogs(logsData || []);
+    });
+
+    const settingsChannel = subscribeToSettings(async () => {
+      const announcementData = await getAnnouncement();
+      setAnnouncementState(announcementData?.text || '');
+    });
+
+    return () => {
+      supabase.removeChannel(absensiChannel);
+      supabase.removeChannel(settingsChannel);
+    };
+  }, [supabaseReady]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  useEffect(() => {
-    const saved = localStorage.getItem('avi-dark');
-    if (saved) setDarkMode(JSON.parse(saved));
-  }, []);
+  // ============================================
+  // HANDLERS & HELPERS
+  // ============================================
 
-  useEffect(() => {
-    localStorage.setItem('avi-dark', JSON.stringify(darkMode));
-    if (darkMode) {
-        document.documentElement.classList.add('dark');
-    } else {
-        document.documentElement.classList.remove('dark');
-    }
-  }, [darkMode]);
+  const showStatus = (msg, type) => {
+    setStatusMessage({ msg, type });
+    setTimeout(() => setStatusMessage(null), 4000);
+  };
 
-  useEffect(() => {
-    if (!supabaseReady) return;
-
-    const load = async () => {
-      setLogs(await getAbsensiLogs() || []);
-      setAdminLogs(await getAdminLogs() || []);
-      const ann = await getAnnouncement();
-      setAnnouncementText(ann?.text || '');
-    };
-
-    load();
-    subscribeToAbsensiLogs(load);
-    subscribeToSettings(load);
-    subscribeToAdminLogs(load);
-  }, [supabaseReady]);
-
-  /* ====================== HELPERS ====================== */
-  const showAlert = (title, message, type = 'info') =>
+  const showAlert = (title, message, type = 'error') => {
     setAlertModal({ show: true, title, message, type });
+  };
 
-  /* ====================== LOGIN ====================== */
-  const handleLogin = async e => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const u = loginInput.username.toLowerCase().trim();
-    const p = loginInput.password;
+    const username = loginInput.username.toLowerCase().trim();
+    const password = loginInput.password;
+
+    if (!username || !password) {
+      showStatus("Username dan password harus diisi", "error");
+      return;
+    }
 
     try {
-      const cfg = await getUserConfig(u);
-      const valid = cfg?.password || defaultCredentials[u]?.pass;
+      const savedConfig = await getUserConfig(username);
+      const correctPass = savedConfig ? savedConfig.password : defaultCredentials[username]?.pass;
 
-      if (valid && p === valid) {
-        setAppUser({ 
-            username: u, 
-            nama: u.charAt(0).toUpperCase() + u.slice(1), 
-            role: u === 'admin' ? 'admin' : 'pegawai' 
-        });
-        setCurrentPage(u === 'admin' ? 'history' : 'absen');
+      if (defaultCredentials[username] && password === correctPass) {
+        const userData = { 
+          nama: username === 'admin' ? 'Administrator' : daftarPegawai.find(p => p.id === username)?.nama || username, 
+          role: defaultCredentials[username].role || 'pegawai',
+          username: username
+        };
+        setAppUser(userData);
+        setCurrentPage(userData.role === 'admin' ? 'history' : 'absen');
+        setLoginInput({ username: '', password: '' });
       } else {
-        showAlert('Login Gagal', 'Username atau password salah', 'error');
+        showStatus("Akses Ditolak: Periksa Username/Password", "error");
       }
     } catch (err) {
-      showAlert('Error', 'Terjadi kesalahan koneksi', 'error');
+      showStatus("Error saat login, coba lagi", "error");
     }
   };
 
-  /* ====================== ABSEN ====================== */
-  const handleAbsen = async (aksi, ket = '-') => {
-    if (isLoading) return;
+  const handleAbsen = async (action, note = "") => {
+    if (isLoading || !supabaseReady) return;
     setIsLoading(true);
 
     const now = new Date();
     const todayStr = now.toLocaleDateString('id-ID');
     
+    // Check duplicate
     const duplicate = logs.find(l => 
-        l.nama === appUser.nama && 
-        l.tipe === absensiType && 
-        l.aksi === aksi && 
-        new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr
+      l.nama === appUser.nama && 
+      l.tipe === absensiType && 
+      l.aksi === action && 
+      new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr
     );
 
     if (duplicate) {
-        showAlert('Sudah Absen', `Anda sudah melakukan ${aksi} hari ini pukul ${duplicate.waktu}`, 'info');
-        setIsLoading(false);
-        return;
+      showAlert("Sudah Terdaftar", `Anda sudah melakukan ${action} ${absensiType} hari ini.`, 'info');
+      setIsLoading(false);
+      return;
     }
 
     try {
       await addAbsensiLog({
         nama: appUser.nama,
         tipe: absensiType,
-        aksi,
-        keterangan: ket,
-        timestamp: Date.now(),
-        bulan_index: now.getMonth(),
+        aksi: action,
+        keterangan: note || "-",
         waktu: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-        tanggal_display: now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })
+        tanggal_display: now.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }),
+        bulan_index: now.getMonth(),
+        timestamp: Date.now()
       });
-      showAlert('Berhasil', `${aksi} ${absensiType} telah tercatat.`, 'success');
-    } catch {
-      showAlert('Gagal', 'Tidak bisa menyimpan absensi', 'error');
-    } finally {
-      setIsLoading(false);
+
+      showStatus(`${action} ${absensiType} Berhasil`, "success");
+      setReasonText("");
       setShowReasonModal(null);
-      setReasonText('');
+    } catch (e) {
+      showAlert("Gagal Menyimpan", "Koneksi terputus.", "error");
+    } finally { 
+      setIsLoading(false); 
     }
   };
 
-  /* ====================== COMPUTED ====================== */
-  const stats = useMemo(() => {
-    const result = {};
-    daftarPegawai.forEach(p => result[p.nama] = { logs: [], jamLive: 0, gajiLive: 0, hadir: 0, izin: 0, sakit: 0 });
+  const updatePassword = async (targetUsername = null, targetPass = null) => {
+    const isSelf = !targetUsername;
+    const finalUsername = isSelf ? appUser.username : targetUsername;
+    const finalPass = isSelf ? newPass : targetPass;
 
-    logs.forEach(l => {
-      if (!result[l.nama]) return;
-      if (l.bulan_index !== parseInt(filterMonth)) return;
-      
-      result[l.nama].logs.push(l);
-      if (l.tipe === 'Live' && l.aksi === 'Masuk') {
-        result[l.nama].jamLive += 1;
-        result[l.nama].gajiLive += UPAH_PER_JAM;
+    if (!finalPass || finalPass.trim().length < 4) {
+      showAlert("Gagal", "Password minimal 4 karakter.", "error");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await setUserConfig(finalUsername, finalPass);
+      if (!isSelf) await addAdminLog(appUser.nama, `Reset password user: ${finalUsername}`);
+      showAlert("Berhasil", "Password telah diperbarui.", "success");
+      setNewPass("");
+      setResetPassTarget({ username: '', password: '' });
+    } catch (error) {
+      showAlert("Gagal", "Terjadi kesalahan server.", "error");
+    } finally {
+      setIsLoading(true);
+    }
+  };
+
+  // ============================================
+  // COMPUTED VALUES
+  // ============================================
+
+  const stats = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString('id-ID');
+    const filtered = logs.filter(l => l.bulan_index === parseInt(filterMonth));
+    const userSummary = {};
+    const pegawais = appUser?.role === 'admin' ? daftarPegawai : daftarPegawai.filter(p => p.nama === appUser?.nama);
+
+    pegawais.forEach(p => {
+      userSummary[p.nama] = { 
+        hadir: 0, izin: 0, sakit: 0, jamLive: 0, gajiLive: 0, 
+        statusHariIni: 'Belum Absen', clockIn: '--:--', clockOut: '--:--', 
+        keteranganHariIni: '-', logs: []
+      };
+    });
+
+    filtered.forEach(log => {
+      if (!userSummary[log.nama]) return;
+      const logDateStr = new Date(log.timestamp).toLocaleDateString('id-ID');
+      userSummary[log.nama].logs.push(log);
+
+      if (log.tipe === 'Umum') {
+        if (log.aksi === 'Izin') userSummary[log.nama].izin++;
+        if (log.aksi === 'Sakit') userSummary[log.nama].sakit++;
+        if (log.aksi === 'Masuk') userSummary[log.nama].hadir++;
+
+        if (logDateStr === todayStr) {
+          if (log.aksi === 'Masuk') { 
+            userSummary[log.nama].statusHariIni = 'Hadir'; 
+            userSummary[log.nama].clockIn = log.waktu; 
+          }
+          if (log.aksi === 'Pulang') userSummary[log.nama].clockOut = log.waktu;
+          if (['Izin', 'Sakit'].includes(log.aksi)) {
+            userSummary[log.nama].statusHariIni = log.aksi;
+            userSummary[log.nama].keteranganHariIni = log.keterangan;
+          }
+        }
       }
-      if (l.tipe === 'Umum') {
-          if (l.aksi === 'Masuk') result[l.nama].hadir += 1;
-          if (l.aksi === 'Izin') result[l.nama].izin += 1;
-          if (l.aksi === 'Sakit') result[l.nama].sakit += 1;
+
+      if (log.tipe === 'Live' && log.aksi === 'Masuk') {
+        const pair = logs.find(l => 
+          l.nama === log.nama && l.tipe === 'Live' && l.aksi === 'Pulang' && 
+          new Date(l.timestamp).toLocaleDateString('id-ID') === logDateStr && 
+          l.timestamp > log.timestamp
+        );
+        if (pair) {
+          const diff = (pair.timestamp - log.timestamp) / (1000 * 60 * 60);
+          userSummary[log.nama].jamLive += diff;
+          userSummary[log.nama].gajiLive += diff * UPAH_PER_JAM;
+        }
       }
     });
 
-    return result;
-  }, [logs, filterMonth]);
+    return userSummary;
+  }, [logs, filterMonth, appUser]);
 
   const hasLiveAccess = useMemo(() => {
     if (!appUser) return false;
-    const p = daftarPegawai.find(x => x.id === appUser.username);
+    const p = daftarPegawai.find(x => x.nama === appUser.nama);
     return p?.akses.includes('Live') || false;
   }, [appUser]);
 
-  /* ====================== RENDER ====================== */
+  // ============================================
+  // RENDER COMPONENTS
+  // ============================================
+
+  if (!appUser) {
+    return (
+      <div className={`min-h-screen flex items-center justify-center p-6 ${darkMode ? 'bg-zinc-950 text-white' : 'bg-slate-50 text-slate-900'}`}>
+        <div className={`w-full max-w-md p-8 rounded-3xl shadow-2xl ${darkMode ? 'bg-zinc-900' : 'bg-white'}`}>
+          <div className="text-center mb-8">
+            <div className="bg-orange-500 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-500/20">
+              <ShieldCheck className="text-white" size={32} />
+            </div>
+            <h1 className="text-2xl font-black tracking-tight">AVI ABSENSI</h1>
+            <p className="text-sm opacity-50">Silakan login untuk melanjutkan</p>
+          </div>
+
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="text-xs font-bold uppercase ml-1 opacity-50">Username</label>
+              <input 
+                type="text" 
+                className={`w-full mt-1 p-4 rounded-2xl border-2 outline-none transition-all ${darkMode ? 'bg-zinc-800 border-zinc-700 focus:border-orange-500' : 'bg-slate-50 border-slate-100 focus:border-orange-500'}`}
+                value={loginInput.username}
+                onChange={e => setLoginInput({...loginInput, username: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold uppercase ml-1 opacity-50">Password</label>
+              <input 
+                type="password" 
+                className={`w-full mt-1 p-4 rounded-2xl border-2 outline-none transition-all ${darkMode ? 'bg-zinc-800 border-zinc-700 focus:border-orange-500' : 'bg-slate-50 border-slate-100 focus:border-orange-500'}`}
+                value={loginInput.password}
+                onChange={e => setLoginInput({...loginInput, password: e.target.value})}
+              />
+            </div>
+            <button className="w-full bg-orange-500 hover:bg-orange-600 text-white font-bold p-4 rounded-2xl transition-all shadow-lg shadow-orange-500/20 active:scale-95">
+              Masuk Sekarang
+            </button>
+          </form>
+
+          <button onClick={() => setDarkMode(!darkMode)} className="mt-8 w-full flex items-center justify-center gap-2 text-xs font-bold opacity-40">
+            {darkMode ? <Sun size={14}/> : <Moon size={14}/>} {darkMode ? 'MODE TERANG' : 'MODE GELAP'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'dark bg-slate-950 text-white' : 'bg-slate-50 text-slate-900'} font-sans pb-24 md:pb-0`}>
-      
-      {/* HEADER */}
-      {appUser && (
-        <header className={`sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b backdrop-blur-md ${darkMode ? 'bg-slate-950/80 border-slate-800' : 'bg-white/80 border-slate-200'}`}>
+    <div className={`min-h-screen transition-colors duration-300 ${darkMode ? 'bg-zinc-950 text-white' : 'bg-slate-50 text-slate-900'}`}>
+      {/* NAVBAR */}
+      <nav className={`sticky top-0 z-40 backdrop-blur-md border-b ${darkMode ? 'bg-zinc-900/80 border-zinc-800' : 'bg-white/80 border-slate-100'}`}>
+        <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-500 rounded-xl shadow-lg shadow-orange-500/20">
+            <div className="bg-orange-500 w-10 h-10 rounded-xl flex items-center justify-center shadow-lg shadow-orange-500/20">
               <Activity className="text-white" size={20} />
             </div>
-            <h1 className="text-lg font-black tracking-tighter uppercase">AVI ABSENSI</h1>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => setDarkMode(!darkMode)} className="p-2.5 rounded-xl hover:bg-slate-500/10 transition-all">
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-            </button>
-            <button onClick={() => setShowLogoutConfirm(true)} className="p-2.5 rounded-xl bg-rose-500/10 text-rose-500 hover:bg-rose-500 hover:text-white transition-all">
-              <LogOut size={20} />
-            </button>
-          </div>
-        </header>
-      )}
-
-      {/* LOGIN PAGE */}
-      {!appUser && (
-        <div className="flex items-center justify-center min-h-screen p-6">
-          <div className={`w-full max-w-sm p-10 rounded-[2.5rem] border shadow-2xl relative overflow-hidden transition-all ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'}`}>
-            <div className="absolute -top-20 -right-20 w-48 h-48 bg-orange-500/10 rounded-full blur-3xl"></div>
-            <div className="text-center mb-10">
-              <div className="w-20 h-20 bg-orange-500 rounded-3xl flex items-center justify-center text-white font-black text-4xl mx-auto mb-6 shadow-2xl shadow-orange-500/30">A</div>
-              <h2 className="text-3xl font-black tracking-tighter">MASUK</h2>
-              <p className="text-[10px] font-bold text-orange-500 uppercase tracking-widest mt-2">Avicenna Agency System</p>
+            <div className="hidden sm:block">
+              <h2 className="font-black text-lg leading-tight">AVI HUB</h2>
+              <p className="text-[10px] font-bold opacity-40 uppercase tracking-widest">{appUser.role}</p>
             </div>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 ml-4">Username</label>
-                <div className="relative">
-                  <User className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30" size={18} />
-                  <input placeholder="ID Pegawai" className={`w-full pl-12 pr-4 py-4 rounded-2xl border-2 font-bold outline-none transition-all ${darkMode ? 'bg-slate-800 border-slate-700 focus:border-orange-500' : 'bg-slate-50 border-slate-100 focus:border-orange-500'}`} onChange={e => setLoginInput({ ...loginInput, username: e.target.value })} />
-                </div>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black uppercase tracking-widest opacity-40 ml-4">Password</label>
-                <div className="relative">
-                  <Lock className="absolute left-4 top-1/2 -translate-y-1/2 opacity-30" size={18} />
-                  <input type="password" placeholder="••••••••" className={`w-full pl-12 pr-4 py-4 rounded-2xl border-2 font-bold outline-none transition-all ${darkMode ? 'bg-slate-800 border-slate-700 focus:border-orange-500' : 'bg-slate-50 border-slate-100 focus:border-orange-500'}`} onChange={e => setLoginInput({ ...loginInput, password: e.target.value })} />
-                </div>
-              </div>
-              <button className="w-full py-5 bg-orange-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-orange-600 shadow-xl shadow-orange-500/30 transition-all active:scale-95">Konfirmasi Login</button>
-            </form>
           </div>
+
+          <div className="flex bg-slate-100 dark:bg-zinc-800 p-1 rounded-2xl">
+            {appUser.role !== 'admin' && (
+              <button 
+                onClick={() => setCurrentPage('absen')}
+                className={`px-6 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === 'absen' ? 'bg-white dark:bg-zinc-700 shadow-sm text-orange-500' : 'opacity-50'}`}
+              >
+                ABSEN
+              </button>
+            )}
+            <button 
+              onClick={() => setCurrentPage('history')}
+              className={`px-6 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === 'history' ? 'bg-white dark:bg-zinc-700 shadow-sm text-orange-500' : 'opacity-50'}`}
+            >
+              RIWAYAT
+            </button>
+            {appUser.role === 'admin' && (
+              <button 
+                onClick={() => setCurrentPage('settings')}
+                className={`px-6 py-2 rounded-xl text-xs font-bold transition-all ${currentPage === 'settings' ? 'bg-white dark:bg-zinc-700 shadow-sm text-orange-500' : 'opacity-50'}`}
+              >
+                SETTINGS
+              </button>
+            )}
+          </div>
+
+          <button onClick={() => setShowLogoutConfirm(true)} className="p-3 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl transition-all">
+            <LogOut size={20} />
+          </button>
         </div>
-      )}
+      </nav>
 
-      {/* MAIN CONTENT */}
-      {appUser && (
-        <main className="max-w-4xl mx-auto p-6 space-y-8 animate-in fade-in duration-500">
-          
-          {/* PAGE: ABSENSI */}
-          {currentPage === 'absen' && (
-            <div className="space-y-8">
-              {announcement && (
-                <div className={`p-5 rounded-[2rem] border-2 flex items-center gap-4 ${darkMode ? 'bg-orange-500/10 border-orange-500/20 text-orange-400' : 'bg-orange-50 border-orange-100 text-orange-600'}`}>
-                   <div className="p-3 bg-orange-500 text-white rounded-2xl"><Megaphone size={20} /></div>
-                   <p className="text-sm font-bold flex-1">{announcement}</p>
+      {/* CONTENT */}
+      <main className="max-w-6xl mx-auto p-6">
+        {currentPage === 'absen' && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* ANNOUNCEMENT */}
+            {announcement && (
+              <div className="bg-orange-500 text-white p-6 rounded-3xl shadow-xl shadow-orange-500/20 relative overflow-hidden group">
+                <Megaphone size={80} className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform" />
+                <div className="relative z-10">
+                  <div className="flex items-center gap-2 mb-2 text-xs font-black uppercase tracking-widest opacity-80">
+                    <Info size={14} /> Informasi Penting
+                  </div>
+                  <p className="font-bold text-lg leading-relaxed">{announcement}</p>
                 </div>
-              )}
+              </div>
+            )}
 
-              <div className="text-center py-10">
-                <h2 className="text-7xl md:text-8xl font-black tracking-tighter tabular-nums mb-2">
+            {/* CLOCK */}
+            <div className={`p-10 rounded-[40px] text-center border shadow-2xl relative overflow-hidden ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-50'}`}>
+              <div className="relative z-10">
+                <h3 className="text-6xl sm:text-7xl font-black tracking-tighter tabular-nums mb-2">
                   {currentTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                </h2>
-                <p className="text-sm font-black uppercase opacity-40 tracking-[0.3em]">
+                  <span className="text-2xl opacity-20 ml-2">{currentTime.toLocaleTimeString('id-ID', { second: '2-digit' })}</span>
+                </h3>
+                <p className="text-sm font-bold opacity-40 uppercase tracking-[0.3em]">
                   {currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </p>
               </div>
+            </div>
 
-              {hasLiveAccess && (
-                <div className={`p-2 rounded-[2rem] flex gap-2 border-2 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
-                  {['Umum', 'Live'].map(t => (
-                    <button key={t} onClick={() => setAbsensiType(t)} className={`flex-1 py-4 rounded-[1.5rem] font-black text-xs uppercase tracking-widest transition-all ${absensiType === t ? 'bg-orange-500 text-white shadow-lg' : 'opacity-40 hover:opacity-100'}`}>Sesi {t}</button>
-                  ))}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => handleAbsen('Masuk')} disabled={isLoading} className="h-44 bg-emerald-600 text-white rounded-[3rem] shadow-xl shadow-emerald-600/20 flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50">
-                   {isLoading ? <RefreshCw className="animate-spin" size={32} /> : <CheckCircle2 size={40} />}
-                   <span className="text-[10px] font-black uppercase tracking-widest">Clock In</span>
+            {/* ACTIONS */}
+            <div className={`p-8 rounded-[40px] border shadow-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-50'}`}>
+              <div className="flex gap-2 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl mb-8">
+                <button 
+                  onClick={() => setAbsensiType('Umum')}
+                  className={`flex-1 py-3 rounded-xl text-xs font-black transition-all ${absensiType === 'Umum' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'opacity-40'}`}
+                >
+                  UMUM
                 </button>
-                <button onClick={() => handleAbsen('Pulang')} disabled={isLoading} className="h-44 bg-rose-600 text-white rounded-[3rem] shadow-xl shadow-rose-600/20 flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50">
-                   <Clock size={40} />
-                   <span className="text-[10px] font-black uppercase tracking-widest">Clock Out</span>
-                </button>
+                {hasLiveAccess && (
+                  <button 
+                    onClick={() => setAbsensiType('Live')}
+                    className={`flex-1 py-3 rounded-xl text-xs font-black transition-all ${absensiType === 'Live' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'opacity-40'}`}
+                  >
+                    LIVE SESSION
+                  </button>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                 <button onClick={() => setShowReasonModal('Izin')} className="py-6 rounded-[2rem] bg-amber-500/10 text-amber-600 border-2 border-amber-500/20 font-black uppercase text-[10px] tracking-widest hover:bg-amber-500 hover:text-white transition-all">Izin Kerja</button>
-                 <button onClick={() => setShowReasonModal('Sakit')} className="py-6 rounded-[2rem] bg-blue-500/10 text-blue-600 border-2 border-blue-500/20 font-black uppercase text-[10px] tracking-widest hover:bg-blue-500 hover:text-white transition-all">Sakit</button>
+                <button 
+                  disabled={isLoading}
+                  onClick={() => handleAbsen('Masuk')}
+                  className="group relative bg-emerald-500 hover:bg-emerald-600 p-8 rounded-3xl text-white shadow-lg shadow-emerald-500/20 transition-all active:scale-95 overflow-hidden"
+                >
+                  <CheckCircle2 size={100} className="absolute -left-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform" />
+                  <div className="relative z-10 flex flex-col items-center">
+                    <CheckCircle2 size={32} className="mb-2" />
+                    <span className="font-black text-xs uppercase tracking-widest">Clock In</span>
+                  </div>
+                </button>
+                <button 
+                  disabled={isLoading}
+                  onClick={() => handleAbsen('Pulang')}
+                  className="group relative bg-rose-500 hover:bg-rose-600 p-8 rounded-3xl text-white shadow-lg shadow-rose-500/20 transition-all active:scale-95 overflow-hidden"
+                >
+                  <Clock size={100} className="absolute -left-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform" />
+                  <div className="relative z-10 flex flex-col items-center">
+                    <Clock size={32} className="mb-2" />
+                    <span className="font-black text-xs uppercase tracking-widest">Clock Out</span>
+                  </div>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <button 
+                  onClick={() => setShowReasonModal('Izin')}
+                  className={`p-4 rounded-2xl border-2 font-bold text-xs uppercase transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-100 hover:bg-slate-50'}`}
+                >
+                  Izin
+                </button>
+                <button 
+                  onClick={() => setShowReasonModal('Sakit')}
+                  className={`p-4 rounded-2xl border-2 font-bold text-xs uppercase transition-all ${darkMode ? 'border-zinc-800 hover:bg-zinc-800' : 'border-slate-100 hover:bg-slate-50'}`}
+                >
+                  Sakit
+                </button>
               </div>
             </div>
-          )}
+          </div>
+        )}
 
-          {/* PAGE: HISTORY / DASHBOARD */}
-          {currentPage === 'history' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-black uppercase tracking-tight">Riwayat Absensi</h3>
-                <select value={filterMonth} onChange={e => setFilterMonth(e.target.value)} className={`px-4 py-2 rounded-xl font-bold text-sm border-2 outline-none ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'}`}>
-                    {daftarBulan.map((b, i) => <option key={i} value={i}>{b}</option>)}
+        {currentPage === 'history' && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-white dark:bg-zinc-900 p-6 rounded-3xl border dark:border-zinc-800">
+              <h2 className="text-xl font-black">Laporan Kehadiran</h2>
+              <div className="flex gap-2">
+                <select 
+                  value={filterMonth}
+                  onChange={e => setFilterMonth(e.target.value)}
+                  className={`p-3 rounded-xl border-2 font-bold text-sm outline-none ${darkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-slate-50 border-slate-100'}`}
+                >
+                  {daftarBulan.map((b, i) => <option key={i} value={i}>{b}</option>)}
                 </select>
-              </div>
-
-              {appUser.role === 'admin' && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <div className={`p-6 rounded-[2rem] border ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                        <p className="text-[10px] font-black uppercase opacity-40 mb-1">Total Pegawai</p>
-                        <p className="text-2xl font-black">{daftarPegawai.length}</p>
-                    </div>
-                    <div className={`p-6 rounded-[2rem] border ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                        <p className="text-[10px] font-black uppercase opacity-40 mb-1">Live Sesi</p>
-                        <p className="text-2xl font-black">{logs.filter(l => l.tipe === 'Live' && l.bulan_index === parseInt(filterMonth)).length}</p>
-                    </div>
-                    <div className={`p-6 rounded-[2rem] border ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                        <p className="text-[10px] font-black uppercase opacity-40 mb-1">Izin/Sakit</p>
-                        <p className="text-2xl font-black text-amber-500">{logs.filter(l => (l.aksi === 'Izin' || l.aksi === 'Sakit') && l.bulan_index === parseInt(filterMonth)).length}</p>
-                    </div>
-                    <div className={`p-6 rounded-[2rem] border ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                        <p className="text-[10px] font-black uppercase opacity-40 mb-1">Hadir Umum</p>
-                        <p className="text-2xl font-black text-emerald-500">{logs.filter(l => l.tipe === 'Umum' && l.aksi === 'Masuk' && l.bulan_index === parseInt(filterMonth)).length}</p>
-                    </div>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                {logs.filter(l => l.bulan_index === parseInt(filterMonth)).length === 0 ? (
-                    <div className="py-20 text-center opacity-30">
-                        <Inbox size={48} className="mx-auto mb-4" />
-                        <p className="font-bold">Belum ada data di bulan ini</p>
-                    </div>
-                ) : (
-                    logs.filter(l => l.bulan_index === parseInt(filterMonth))
-                    .sort((a,b) => b.timestamp - a.timestamp)
-                    .map((log, i) => (
-                        <div key={i} className={`p-5 rounded-[2.5rem] border flex items-center justify-between transition-all hover:scale-[1.01] ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-sm'}`}>
-                            <div className="flex items-center gap-4">
-                                <div className={`p-3.5 rounded-2xl ${log.aksi === 'Masuk' ? 'bg-emerald-500 shadow-emerald-500/20' : log.aksi === 'Pulang' ? 'bg-rose-500 shadow-rose-500/20' : 'bg-amber-500 shadow-amber-500/20'} text-white shadow-lg`}>
-                                    {log.aksi === 'Masuk' ? <CheckCircle2 size={18} /> : log.aksi === 'Pulang' ? <Clock size={18} /> : <FileText size={18} />}
-                                </div>
-                                <div>
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-xs font-black uppercase tracking-widest">{log.nama}</p>
-                                        <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase ${log.tipe === 'Live' ? 'bg-purple-500/10 text-purple-500' : 'bg-blue-500/10 text-blue-500'}`}>{log.tipe}</span>
-                                    </div>
-                                    <p className="text-[10px] font-bold opacity-40">{log.tanggal_display || 'Tanggal tidak tercatat'}</p>
-                                    {log.keterangan && log.keterangan !== '-' && <p className="text-[10px] mt-1 font-bold italic opacity-60">" {log.keterangan} "</p>}
-                                </div>
-                            </div>
-                            <div className="text-right">
-                                <p className="text-lg font-black tracking-tighter tabular-nums">{log.waktu}</p>
-                                <p className="text-[8px] font-black uppercase opacity-40 tracking-widest">{log.aksi}</p>
-                            </div>
-                        </div>
-                    ))
+                {appUser.role === 'admin' && (
+                  <button className="bg-orange-500 text-white p-3 rounded-xl shadow-lg shadow-orange-500/20">
+                    <Download size={20} />
+                  </button>
                 )}
               </div>
             </div>
-          )}
 
-          {/* PAGE: PROFILE */}
-          {currentPage === 'profile' && (
-            <div className="space-y-8 animate-in slide-in-from-bottom-4">
-                <div className={`p-10 rounded-[3rem] border text-center relative overflow-hidden ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100 shadow-xl'}`}>
-                    <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-orange-500 to-rose-500 opacity-20"></div>
-                    <div className="relative">
-                        <div className="w-24 h-24 bg-orange-500 rounded-[2rem] flex items-center justify-center text-white font-black text-4xl mx-auto mb-6 shadow-2xl shadow-orange-500/30">
-                            {appUser.nama.charAt(0)}
-                        </div>
-                        <h3 className="text-3xl font-black tracking-tighter mb-1">{appUser.nama}</h3>
-                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-orange-500">{appUser.role}</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {Object.entries(stats).map(([nama, data]) => (
+                <div key={nama} className={`p-6 rounded-[32px] border shadow-sm ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-100'}`}>
+                  <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center font-black">
+                        {nama.charAt(0)}
+                      </div>
+                      <div>
+                        <h4 className="font-black leading-tight">{nama}</h4>
+                        <p className={`text-[10px] font-bold px-2 py-0.5 rounded-full inline-block mt-1 ${
+                          data.statusHariIni === 'Hadir' ? 'bg-emerald-500/10 text-emerald-500' :
+                          data.statusHariIni === 'Belum Absen' ? 'bg-slate-500/10 text-slate-500' : 'bg-orange-500/10 text-orange-500'
+                        }`}>
+                          {data.statusHariIni}
+                        </p>
+                      </div>
                     </div>
-                </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-bold opacity-40 uppercase">Gaji Live</p>
+                      <p className="font-black text-orange-500">Rp {data.gajiLive.toLocaleString('id-ID')}</p>
+                    </div>
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className={`p-6 rounded-[2.5rem] border flex items-center gap-4 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                        <div className="p-4 bg-blue-500/10 text-blue-500 rounded-2xl"><ShieldCheck size={24}/></div>
-                        <div>
-                            <p className="text-[10px] font-black uppercase opacity-40">Status Keamanan</p>
-                            <p className="text-sm font-black uppercase">Akun Terverifikasi</p>
-                        </div>
+                  <div className="grid grid-cols-4 gap-2 mb-6">
+                    <div className="bg-slate-50 dark:bg-zinc-800/50 p-3 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold opacity-40">Hadir</p>
+                      <p className="font-black text-lg">{data.hadir}</p>
                     </div>
-                    <div className={`p-6 rounded-[2.5rem] border flex items-center gap-4 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                        <div className="p-4 bg-emerald-500/10 text-emerald-500 rounded-2xl"><TrendingUp size={24}/></div>
-                        <div>
-                            <p className="text-[10px] font-black uppercase opacity-40">Performa Bulan Ini</p>
-                            <p className="text-sm font-black uppercase">Sangat Baik</p>
-                        </div>
+                    <div className="bg-slate-50 dark:bg-zinc-800/50 p-3 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold opacity-40">Izin</p>
+                      <p className="font-black text-lg">{data.izin}</p>
                     </div>
-                </div>
+                    <div className="bg-slate-50 dark:bg-zinc-800/50 p-3 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold opacity-40">Sakit</p>
+                      <p className="font-black text-lg">{data.sakit}</p>
+                    </div>
+                    <div className="bg-slate-50 dark:bg-zinc-800/50 p-3 rounded-2xl text-center">
+                      <p className="text-[10px] font-bold opacity-40">Jam</p>
+                      <p className="font-black text-lg">{data.jamLive.toFixed(1)}</p>
+                    </div>
+                  </div>
 
-                <div className={`p-8 rounded-[2.5rem] border ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'}`}>
-                    <h4 className="text-xs font-black uppercase tracking-widest mb-6 opacity-40">Pengaturan Aplikasi</h4>
-                    <div className="space-y-2">
-                        <button onClick={() => setDarkMode(!darkMode)} className="w-full p-4 rounded-2xl flex items-center justify-between hover:bg-slate-500/5 transition-all group">
-                            <div className="flex items-center gap-3">
-                                {darkMode ? <Sun size={20} className="text-orange-500"/> : <Moon size={20} className="text-blue-500"/>}
-                                <span className="text-sm font-bold">Mode Gelap</span>
-                            </div>
-                            <div className={`w-12 h-6 rounded-full relative transition-all ${darkMode ? 'bg-orange-500' : 'bg-slate-200'}`}>
-                                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${darkMode ? 'left-7' : 'left-1'}`}></div>
-                            </div>
-                        </button>
-                        <button className="w-full p-4 rounded-2xl flex items-center justify-between hover:bg-slate-500/5 transition-all group opacity-50 cursor-not-allowed">
-                            <div className="flex items-center gap-3">
-                                <Lock size={20}/>
-                                <span className="text-sm font-bold">Ganti Password</span>
-                            </div>
-                            <ChevronRight size={16}/>
-                        </button>
-                    </div>
+                  <div className="space-y-2">
+                    {data.logs.slice(0, 5).map((log, idx) => (
+                      <div key={idx} className="flex items-center justify-between p-3 rounded-xl border dark:border-zinc-800/50 text-xs">
+                        <div className="flex items-center gap-3">
+                          <span className={`w-1.5 h-1.5 rounded-full ${log.aksi === 'Masuk' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                          <span className="font-bold opacity-50">{log.waktu}</span>
+                          <span className="font-black">{log.aksi} {log.tipe}</span>
+                        </div>
+                        <span className="opacity-40 font-bold italic">{new Date(log.timestamp).toLocaleDateString('id-ID', {day: 'numeric', month: 'short'})}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              ))}
             </div>
-          )}
-        </main>
-      )}
-
-      {/* MOBILE NAVIGATION */}
-      {appUser && (
-        <nav className={`fixed bottom-0 left-0 right-0 p-4 border-t-2 backdrop-blur-xl z-50 md:hidden flex gap-2 ${darkMode ? 'bg-slate-950/90 border-slate-800 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]' : 'bg-white/90 border-slate-200 shadow-[0_-10px_30px_rgba(0,0,0,0.05)]'}`}>
-          {appUser.role !== 'admin' && (
-            <button onClick={() => setCurrentPage('absen')} className={`flex-1 py-4 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${currentPage === 'absen' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'opacity-40'}`}>
-                <Clock size={18} /><span className="text-[8px] font-black uppercase">Absen</span>
-            </button>
-          )}
-          <button onClick={() => setCurrentPage('history')} className={`flex-1 py-4 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${currentPage === 'history' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'opacity-40'}`}>
-              <History size={18} /><span className="text-[8px] font-black uppercase">{appUser.role === 'admin' ? 'Data' : 'Riwayat'}</span>
-          </button>
-          <button onClick={() => setCurrentPage('profile')} className={`flex-1 py-4 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${currentPage === 'profile' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'opacity-40'}`}>
-              <Settings size={18} /><span className="text-[8px] font-black uppercase">Profil</span>
-          </button>
-        </nav>
-      )}
-
-      {/* MODALS */}
-      {alertModal.show && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-6 backdrop-blur-sm">
-          <div className={`p-8 rounded-[2.5rem] w-full max-w-sm border-2 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} shadow-2xl`}>
-            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-6 ${alertModal.type === 'error' ? 'bg-rose-500/20 text-rose-500' : alertModal.type === 'success' ? 'bg-emerald-500/20 text-emerald-500' : 'bg-blue-500/20 text-blue-500'}`}>
-                {alertModal.type === 'error' ? <AlertCircle size={32} /> : alertModal.type === 'success' ? <CheckCircle2 size={32} /> : <Info size={32} />}
-            </div>
-            <h3 className="text-xl font-black mb-2 uppercase tracking-tight">{alertModal.title}</h3>
-            <p className="text-sm opacity-60 font-medium leading-relaxed mb-8">{alertModal.message}</p>
-            <button onClick={() => setAlertModal({ ...alertModal, show: false })} className="w-full py-4 bg-orange-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest">Konfirmasi</button>
           </div>
-        </div>
-      )}
+        )}
 
-      {showReasonModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-6 backdrop-blur-sm">
-          <div className={`p-8 rounded-[2.5rem] w-full max-w-md border-2 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} shadow-2xl`}>
-            <h3 className="text-xl font-black mb-6 uppercase tracking-tight">Keterangan {showReasonModal}</h3>
-            <textarea 
-                placeholder="Tulis alasan atau keterangan di sini..."
-                className={`w-full p-5 rounded-2xl border-2 font-bold outline-none mb-6 h-32 transition-all ${darkMode ? 'bg-slate-800 border-slate-700 focus:border-orange-500' : 'bg-slate-50 border-slate-100 focus:border-orange-500'}`}
-                value={reasonText}
-                onChange={e => setReasonText(e.target.value)}
+        {currentPage === 'settings' && (
+          <div className="max-w-2xl mx-auto space-y-6">
+            <div className={`p-8 rounded-[40px] border shadow-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-50'}`}>
+              <div className="flex items-center gap-3 mb-6">
+                <Megaphone className="text-orange-500" />
+                <h3 className="text-lg font-black italic tracking-tight">KONTROL PENGUMUMAN</h3>
+              </div>
+              <textarea 
+                value={announcement}
+                onChange={e => setAnnouncementState(e.target.value)}
+                placeholder="Tulis pengumuman di sini..."
+                className={`w-full p-6 rounded-3xl border-2 h-32 outline-none transition-all resize-none font-bold ${darkMode ? 'bg-zinc-800 border-zinc-700 focus:border-orange-500' : 'bg-slate-50 border-slate-100 focus:border-orange-500'}`}
+              />
+              <div className="flex gap-3 mt-4">
+                <button 
+                  onClick={async () => {
+                    await setAnnouncement(announcement, appUser.nama);
+                    showStatus("Pengumuman diperbarui", "success");
+                  }}
+                  className="flex-1 bg-orange-500 text-white font-black p-4 rounded-2xl shadow-lg active:scale-95"
+                >
+                  Publish Info
+                </button>
+                <button 
+                  onClick={async () => {
+                    await setAnnouncement("", appUser.nama);
+                    setAnnouncementState("");
+                  }}
+                  className="p-4 rounded-2xl border-2 border-rose-500/20 text-rose-500 hover:bg-rose-500/10 font-black"
+                >
+                  <Trash2 size={20} />
+                </button>
+              </div>
+            </div>
+
+            <div className={`p-8 rounded-[40px] border shadow-xl ${darkMode ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-slate-50'}`}>
+              <div className="flex items-center gap-3 mb-6">
+                <Key className="text-orange-500" />
+                <h3 className="text-lg font-black italic tracking-tight">MANAGEMENT AKSES</h3>
+              </div>
+              <div className="space-y-3">
+                {daftarPegawai.map(p => (
+                  <div key={p.id} className="flex items-center justify-between p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/50">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-zinc-200 dark:bg-zinc-700 rounded-xl flex items-center justify-center font-black">
+                        {p.nama.charAt(0)}
+                      </div>
+                      <span className="font-bold">{p.nama}</span>
+                    </div>
+                    <button 
+                      onClick={() => setResetPassTarget({ username: p.id, password: '' })}
+                      className="text-[10px] font-black uppercase text-orange-500 px-4 py-2 bg-orange-500/10 rounded-xl hover:bg-orange-500/20"
+                    >
+                      Reset Password
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* MODAL: RESET PASSWORD */}
+      {resetPassTarget.username && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-sm bg-black/20">
+          <div className={`w-full max-w-sm p-8 rounded-[32px] shadow-2xl animate-in zoom-in-95 duration-200 ${darkMode ? 'bg-zinc-900' : 'bg-white'}`}>
+            <h3 className="text-lg font-black mb-4">Reset Password {resetPassTarget.username}</h3>
+            <input 
+              type="text" 
+              placeholder="Password baru..."
+              className={`w-full p-4 rounded-2xl border-2 mb-4 outline-none font-bold ${darkMode ? 'bg-zinc-800 border-zinc-700' : 'bg-slate-50 border-slate-100'}`}
+              onChange={e => setResetPassTarget({...resetPassTarget, password: e.target.value})}
             />
-            <div className="grid grid-cols-2 gap-3">
-                <button onClick={() => setShowReasonModal(null)} className="py-4 bg-slate-500/10 rounded-2xl font-black uppercase text-[10px] tracking-widest">Batal</button>
-                <button onClick={() => handleAbsen(showReasonModal, reasonText)} className="py-4 bg-orange-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-orange-500/20">Kirim Data</button>
+            <div className="flex gap-2">
+              <button 
+                onClick={() => setResetPassTarget({ username: '', password: '' })}
+                className="flex-1 p-4 rounded-2xl font-bold opacity-50"
+              >
+                Batal
+              </button>
+              <button 
+                onClick={() => updatePassword(resetPassTarget.username, resetPassTarget.password)}
+                className="flex-1 bg-orange-500 text-white font-black p-4 rounded-2xl shadow-lg"
+              >
+                Simpan
+              </button>
             </div>
           </div>
         </div>
       )}
 
+      {/* MODAL: LOGOUT CONFIRM */}
       {showLogoutConfirm && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-6 backdrop-blur-sm">
-            <div className={`p-8 rounded-[2.5rem] w-full max-w-xs border-2 text-center ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-100'} shadow-2xl`}>
-                <div className="w-16 h-16 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <LogOut size={32} />
-                </div>
-                <h3 className="text-xl font-black mb-2 uppercase tracking-tight">Keluar Sesi?</h3>
-                <p className="text-xs opacity-50 font-medium mb-8">Anda akan diarahkan kembali ke halaman login.</p>
-                <div className="flex flex-col gap-2">
-                    <button onClick={() => { setAppUser(null); setShowLogoutConfirm(false); }} className="w-full py-4 bg-rose-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest">Ya, Keluar</button>
-                    <button onClick={() => setShowLogoutConfirm(false)} className="w-full py-4 bg-slate-500/10 rounded-2xl font-black uppercase text-xs tracking-widest">Batal</button>
-                </div>
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-sm bg-black/40">
+          <div className={`w-full max-w-sm p-8 rounded-[40px] text-center shadow-2xl animate-in fade-in zoom-in-90 ${darkMode ? 'bg-zinc-900' : 'bg-white'}`}>
+            <div className="bg-rose-500/10 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 text-rose-500">
+              <LogOut size={40} />
             </div>
+            <h3 className="text-xl font-black mb-2">Yakin Ingin Keluar?</h3>
+            <p className="text-sm opacity-50 mb-8 font-bold">Anda perlu login kembali untuk mengakses sistem absensi.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowLogoutConfirm(false)} className="flex-1 p-4 rounded-2xl font-bold opacity-50">Stay</button>
+              <button onClick={() => setAppUser(null)} className="flex-1 bg-rose-500 text-white font-black p-4 rounded-2xl shadow-lg shadow-rose-500/20 active:scale-95 transition-all">Logout</button>
+            </div>
+          </div>
         </div>
       )}
 
+      {/* STATUS TOAST */}
+      {statusMessage && (
+        <div className={`fixed bottom-8 left-1/2 -translate-x-1/2 z-[200] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-4 ${
+          statusMessage.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'
+        }`}>
+          {statusMessage.type === 'success' ? <CheckCircle2 size={20}/> : <AlertCircle size={20}/>}
+          <span className="font-bold text-sm tracking-tight">{statusMessage.msg}</span>
+        </div>
+      )}
+
+      {/* MODAL: REASON (IZIN/SAKIT) */}
+      {showReasonModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-md bg-black/40">
+          <div className={`w-full max-w-md p-8 rounded-[40px] shadow-2xl ${darkMode ? 'bg-zinc-900' : 'bg-white'}`}>
+            <div className="flex items-center gap-3 mb-6">
+              <div className="bg-orange-500/10 p-3 rounded-2xl text-orange-500">
+                <FileText size={24} />
+              </div>
+              <h3 className="text-xl font-black italic">FORM {showReasonModal.toUpperCase()}</h3>
+            </div>
+            <p className="text-sm font-bold opacity-40 mb-4">Mohon berikan alasan singkat mengapa Anda mengajukan {showReasonModal}.</p>
+            <textarea 
+              autoFocus
+              className={`w-full p-6 rounded-3xl border-2 h-32 outline-none font-bold transition-all mb-6 ${darkMode ? 'bg-zinc-800 border-zinc-700 focus:border-orange-500' : 'bg-slate-50 border-slate-100 focus:border-orange-500'}`}
+              placeholder="Contoh: Mengantar orang tua ke rumah sakit..."
+              onChange={(e) => setReasonText(e.target.value)}
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setShowReasonModal(null)} className="flex-1 p-4 rounded-2xl font-bold opacity-40 uppercase text-xs">Batal</button>
+              <button 
+                onClick={() => handleAbsen(showReasonModal, reasonText)}
+                className="flex-1 bg-orange-500 text-white font-black p-4 rounded-2xl shadow-lg shadow-orange-500/20 text-xs uppercase"
+              >
+                Kirim Laporan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default App;
