@@ -400,22 +400,19 @@ const App = () => {
       if (log.tipe === 'Umum') {
         if (log.aksi === 'Izin') userSummary[log.nama].izin++;
         if (log.aksi === 'Sakit') userSummary[log.nama].sakit++;
-        if (log.aksi === 'Masuk') userSummary[log.nama].hadir++;
-
-        if (logDateStr === todayStr) {
-          if (log.aksi === 'Masuk') { 
-            userSummary[log.nama].statusHariIni = 'Hadir'; 
-            userSummary[log.nama].clockIn = log.waktu; 
-          }
-          if (log.aksi === 'Pulang') { 
-            userSummary[log.nama].clockOut = log.waktu; 
-          }
-          if (log.aksi === 'Izin' || log.aksi === 'Sakit') {
-            userSummary[log.nama].statusHariIni = log.aksi;
-            userSummary[log.nama].keteranganHariIni = log.keterangan;
-          }
-        }
+        
+        // KRITERIA HADIR: Harus ada Masuk DAN Pulang di tanggal yang sama
+        if (log.aksi === 'Masuk') {
+          const logDateStr = new Date(log.timestamp).toLocaleDateString('id-ID');
+          const hasPulang = logs.some(l => 
+            l.nama === log.nama && 
+            l.tipe === 'Umum' && 
+            l.aksi === 'Pulang' && 
+            new Date(l.timestamp).toLocaleDateString('id-ID') === logDateStr
+          );
+          if (hasPulang) userSummary[log.nama].hadir++;
       }
+    }s
 
       if (log.tipe === 'Live' && log.aksi === 'Masuk') {
         const pair = logs.find(l => 
@@ -444,24 +441,37 @@ const App = () => {
     return pegawai?.akses.includes('Live') || false;
   }, [appUser]);
 
-  const todayStatus = useMemo(() => {
-    if (!appUser) return { hasClockIn: false, hasClockOut: false };
-    
-    const today = new Date().toLocaleDateString('id-ID');
-    
-    // PERBAIKAN: Tambahkan filter log.tipe === absensiType
-    const userLogsToday = logs.filter(log => 
-      log.nama === appUser?.nama && 
-      log.tipe === absensiType && // Memisahkan pengecekan antara Umum dan Live
-      new Date(log.timestamp).toLocaleDateString('id-ID') === today
-    );
+  const attendanceStatus = useMemo(() => {
+    if (!appUser) return { canIn: false, canOut: false, incomplete: null, isSunday: false };
 
-    const hasClockIn = userLogsToday.some(log => log.aksi === 'Masuk');
-    const hasClockOut = userLogsToday.some(log => log.aksi === 'Pulang');
+    const today = new Date();
+    const isSunday = today.getDay() === 0;
+    const todayStr = today.toLocaleDateString('id-ID');
 
-    return { hasClockIn, hasClockOut };
-    
-    // PENTING: Tambahkan absensiType di dalam array ini agar status dihitung ulang saat pindah tab
+    // Ambil semua log milik user ini untuk tipe yang dipilih (Umum/Live)
+    const userLogs = logs.filter(l => l.nama === appUser.nama && l.tipe === absensiType);
+
+    // Filter log khusus hari ini
+    const logsToday = userLogs.filter(l => new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr);
+
+    const hasIn = logsToday.some(l => l.aksi === 'Masuk');
+    const hasOut = logsToday.some(l => l.aksi === 'Pulang');
+    const isExcused = logsToday.some(l => l.aksi === 'Izin' || l.aksi === 'Sakit');
+
+    // Cek apakah ada "Hutang" absen: Masuk di hari sebelumnya tapi belum Pulang
+    const sortedLogs = [...userLogs].sort((a, b) => b.timestamp - a.timestamp);
+    const lastLog = sortedLogs[0];
+    const isIncomplete = (lastLog && lastLog.aksi === 'Masuk' && new Date(lastLog.timestamp).toLocaleDateString('id-ID') !== todayStr) ? lastLog : null;
+
+    return {
+      canIn: !hasIn && !isExcused && !isIncomplete && !isSunday,
+      canOut: hasIn && !hasOut && !isExcused,
+      hasIn,
+      hasOut,
+      isExcused,
+      incomplete: isIncomplete,
+      isSunday
+    };
   }, [logs, appUser, absensiType]);
   // ============================================
   // RENDER
@@ -546,6 +556,24 @@ const App = () => {
       {appUser && (
         <main className="max-w-7xl mx-auto p-4 md:p-8 space-y-8">
           
+          {/* PERINGATAN LUPA CLOCK OUT */}
+          {attendanceStatus.incomplete && (
+            <div className="max-w-xl mx-auto bg-rose-600 text-white p-6 rounded-[2rem] flex items-center gap-4 animate-bounce shadow-xl">
+              <AlertTriangle size={32} />
+              <div>
+                <p className="text-[10px] font-black uppercase opacity-60">Perhatian!</p>
+                <p className="font-bold text-sm">Anda lupa Clock Out pada {attendanceStatus.incomplete.tanggal_display}. Silakan Clock Out dulu untuk bisa masuk hari ini.</p>
+              </div>
+            </div>
+          )}
+          
+          {/* INFO HARI MINGGU */}
+          {attendanceStatus.isSunday && (
+            <div className="max-w-xl mx-auto bg-indigo-600 text-white p-6 rounded-[2rem] text-center shadow-xl">
+              <p className="font-black uppercase text-xs tracking-widest">Hari Minggu: Libur Absensi</p>
+            </div>
+          )}
+
           {/* ANNOUNCEMENT BANNER */}
           {announcement && announcement.trim() !== "" && currentPage === 'absen' && (
              <div className="bg-orange-500 text-white p-6 rounded-[2rem] shadow-xl shadow-orange-500/20 flex items-center gap-4 animate-in slide-in-from-top-4 duration-500">
@@ -601,33 +629,25 @@ const App = () => {
                 {/* Tombol Masuk */}
                 <button 
                   onClick={() => handleAbsen('Masuk')} 
-                  disabled={isLoading || todayStatus.hasClockIn} 
-                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 disabled:bg-slate-300 ${todayStatus.hasClockIn ? 'bg-slate-300 text-slate-500' : 'bg-emerald-600 text-white'}`}
+                  disabled={isLoading || !attendanceStatus.canIn} 
+                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 transition-all ${attendanceStatus.canIn ? 'bg-emerald-600 text-white active:scale-95' : 'bg-slate-300 text-slate-500 opacity-50 cursor-not-allowed'}`}
                 >
-                  {isLoading ? <RefreshCw size={32} className="animate-spin" /> : <CheckCircle2 size={32} />} 
-                  {todayStatus.hasClockIn ? 'Sudah Masuk' : 'Clock In'}
+                  <CheckCircle2 size={32} />
+                  {attendanceStatus.hasIn ? 'Sudah Clock In' : 'Clock In'}
                 </button>
 
                 {/* Tombol Pulang */}
                 <button 
                   onClick={() => handleAbsen('Pulang')} 
-                  // Tombol hanya akan mati jika:
-                  // 1. Sedang loading
-                  // 2. BELUM klik Masuk di sesi ini
-                  // 3. SUDAH klik Pulang di sesi ini
-                  disabled={isLoading || !todayStatus.hasClockIn || todayStatus.hasClockOut} 
-                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all ${
-                    (!todayStatus.hasClockIn || todayStatus.hasClockOut)
-                      ? 'bg-slate-200 text-slate-400' 
-                      : 'bg-rose-600 text-white shadow-xl shadow-rose-500/20'
-                  }`}
+                  disabled={isLoading || !attendanceStatus.canOut} 
+                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 transition-all ${attendanceStatus.canOut ? 'bg-rose-600 text-white active:scale-95 shadow-rose-500/20' : 'bg-slate-300 text-slate-500 opacity-50 cursor-not-allowed'}`}
                 >
                   <LogOut size={32} />
-                  <span>{todayStatus.hasClockOut ? 'Sudah Pulang' : 'Clock Out'}</span>
+                  {attendanceStatus.hasOut ? 'Sudah Pulang' : 'Clock Out'}
                 </button>
               </div>
               
-              {absensiType === 'Umum' && (
+              {!attendanceStatus.hasIn && !attendanceStatus.isExcused && !attendanceStatus.isSunday && absensiType === 'Umum' && (
                 <div className="grid grid-cols-2 gap-4">
                   <button onClick={() => setShowReasonModal('Izin')} disabled={isLoading} className="py-6 bg-amber-500 text-white rounded-[2rem] font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50">
                     <FileText size={18} /> Izin
