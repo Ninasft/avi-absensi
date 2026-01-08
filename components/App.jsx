@@ -245,53 +245,19 @@ const App = () => {
   };
 
   const handleAbsen = async (action, note = "") => {
+    // 1. CEK KONEKSI
     if (isLoading || !supabaseReady) {
-      showAlert(
-        "Sistem Sibuk",
-        "Mohon tunggu, data sedang diproses atau koneksi belum siap.",
-        "warning"
-      );
+      showAlert("Sistem Sibuk", "Mohon tunggu, data sedang diproses atau koneksi belum siap.", "warning");
       return;
     }
 
-    const now = Date.now() + (7 * 60 * 60 * 1000);
+    const now = Date.now() + (7 * 60 * 60 * 1000); // Waktu WIB
     const currentHour = new Date(now).getHours();
-    
-
-    // Time validation for Umum
-    if (absensiType === 'Umum') {
-      if (action === 'Masuk' && currentHour < 8) {
-        showAlert("Waktu Belum Dibuka", `Halo ${appUser.nama}, absensi masuk dibuka mulai pukul 08:00 WIB.`, 'warning');
-        return;
-      }
-      if (action === 'Pulang' && currentHour < 16) {
-        showAlert("Belum Waktunya Pulang", `Semangat ${appUser.nama}! Absen pulang baru tersedia pukul 16:00 WIB.`, 'info');
-        return;
-      }
-    }
-
-    // Time validation for Live
-    if (absensiType === 'Live') {
-      if (action === 'Masuk' && currentHour < 18) {
-        showAlert("Sesi Live Belum Dimulai", `Halo ${appUser.nama}, sesi live dimulai dari pukul 18:00 WIB.`, 'warning');
-        return;
-      }
-    }
-
-    if (!supabaseReady) {
-      showAlert(
-        "Sistem Offline",
-        "Tidak dapat mengirim absensi karena koneksi ke server terputus.",
-        "error"
-      );
-      return;
-    }
-    
-    setIsLoading(true);
     const todayStr = new Date(now).toLocaleDateString('id-ID');
 
-    
-    // Check duplicate
+    setIsLoading(true);
+
+    // 2. CEK APAKAH SUDAH ABSEN HARI INI (Logic Duplicate)
     const duplicate = logs.find(l => 
       l.nama === appUser.nama && 
       l.tipe === absensiType && 
@@ -299,13 +265,14 @@ const App = () => {
       new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr
     );
 
+    // JIKA SUDAH ABSEN: Langsung stop di sini, jangan cek jam lagi.
     if (duplicate) {
-      showAlert("Sudah Terdaftar", `Sistem mencatat Anda sudah melakukan ${action} ${absensiType} hari ini pada ${duplicate.waktu}.`, 'info');
+      showAlert("Sudah Terdaftar", `Halo ${appUser.nama}, Anda sudah melakukan ${action} ${absensiType} hari ini.`, 'info');
       setIsLoading(false);
       return;
     }
 
-    // Check Masuk before Pulang
+    // 3. VALIDASI URUTAN: Harus Masuk dulu baru bisa Pulang
     if (action === 'Pulang') {
       const hasMasuk = logs.find(l => 
         l.nama === appUser.nama && 
@@ -315,56 +282,61 @@ const App = () => {
       );
       
       if (!hasMasuk) {
-        showAlert(
-          "Urutan Absensi Salah",
-          "Anda belum melakukan absen Masuk hari ini. Silakan absen Masuk terlebih dahulu.",
-          "warning"
-        );
+        showAlert("Urutan Salah", "Silakan absen Masuk terlebih dahulu.", "warning");
         setIsLoading(false);
         return;
       }
     }
 
+    // 4. VALIDASI JAM (Hanya jalan kalau belum ada absen hari ini)
+    // Sesi UMUM
+    if (absensiType === 'Umum') {
+      if (action === 'Masuk' && currentHour < 8) {
+        showAlert("Waktu Belum Dibuka", `Absensi Masuk UMUM baru dibuka mulai pukul 08:00 WIB.`, 'warning');
+        setIsLoading(false);
+        return;
+      }
+      if (action === 'Pulang' && currentHour < 16) {
+        showAlert("Belum Waktunya Pulang", `Absen Pulang UMUM baru tersedia pukul 16:00 WIB.`, 'info');
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    // Sesi LIVE
+    if (absensiType === 'Live') {
+      if (action === 'Masuk' && currentHour < 13) {
+        showAlert("Waktu Belum Dibuka", `Absensi Masuk LIVE baru dibuka mulai pukul 13:00 WIB.`, 'warning');
+        setIsLoading(false);
+        return;
+      }
+      if (action === 'Pulang' && currentHour < 17) {
+        showAlert("Belum Waktunya Pulang", `Absen Pulang LIVE baru tersedia pukul 17:00 WIB.`, 'info');
+        setIsLoading(false);
+        return;
+      }
+    }
+
+    // 5. PROSES SIMPAN KE DATABASE
     try {
       await addAbsensiLog({
         nama: appUser.nama,
         tipe: absensiType,
         aksi: action,
         keterangan: note || "-",
-        waktu: new Date(now).toLocaleTimeString('id-ID', {
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
-        tanggal_display: new Date(now).toLocaleDateString('id-ID', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long'
-        }),
+        waktu: new Date(now).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        tanggal_display: new Date(now).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }),
         bulan_index: new Date(now).getMonth(),
         timestamp: now,
         hari_index: Math.floor(now / 86400000)
       });
       
-
-      showStatus(`${action} ${absensiType} Berhasil Terkirim`, "success");
+      showStatus(`${action} ${absensiType} Berhasil!`, "success");
       setReasonText("");
       setShowReasonModal(null);
     } catch (e) {
       console.error("Absen save error:", e);
-    
-      if (e.message && e.message.includes("unique_absensi_per_hari")) {
-        showAlert(
-          "Absensi Sudah Ada",
-          "Anda sudah melakukan absensi ini hari ini.",
-          "info"
-        );
-      } else {
-        showAlert(
-          "Gagal Menyimpan",
-          "Terjadi kesalahan saat menyimpan absensi. Silakan coba lagi.",
-          "error"
-        );
-      }     
+      showAlert("Gagal", "Terjadi kesalahan saat menyimpan. Coba lagi.", "error");
     } finally { 
       setIsLoading(false); 
     }
@@ -544,6 +516,21 @@ const App = () => {
     const pegawai = daftarPegawai.find(p => p.nama === appUser.nama);
     return pegawai?.akses.includes('Live') || false;
   }, [appUser]);
+
+  const todayStatus = useMemo(() => {
+    if (!appUser) return { hasClockIn: false, hasClockOut: false };
+    
+    const today = new Date().toLocaleDateString('id-ID');
+    const userLogsToday = logs.filter(log => 
+      log.nama === appUser?.nama && 
+      new Date(log.timestamp).toLocaleDateString('id-ID') === today
+    );
+
+    const hasClockIn = userLogsToday.some(log => log.aksi === 'Masuk');
+    const hasClockOut = userLogsToday.some(log => log.aksi === 'Pulang');
+
+    return { hasClockIn, hasClockOut };
+  }, [logs, appUser]);
   // ============================================
   // RENDER
   // ============================================
@@ -660,11 +647,24 @@ const App = () => {
               )}
 
               <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => handleAbsen('Masuk')} disabled={isLoading} className="h-40 bg-emerald-600 text-white rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                  {isLoading ? <RefreshCw size={32} className="animate-spin" /> : <CheckCircle2 size={32} />} Clock In
+                {/* Tombol Masuk */}
+                <button 
+                  onClick={() => handleAbsen('Masuk')} 
+                  disabled={isLoading || todayStatus.hasClockIn} 
+                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 disabled:bg-slate-300 ${todayStatus.hasClockIn ? 'bg-slate-300 text-slate-500' : 'bg-emerald-600 text-white'}`}
+                >
+                  {isLoading ? <RefreshCw size={32} className="animate-spin" /> : <CheckCircle2 size={32} />} 
+                  {todayStatus.hasClockIn ? 'Sudah Masuk' : 'Clock In'}
                 </button>
-                <button onClick={() => handleAbsen('Pulang')} disabled={isLoading} className="h-40 bg-rose-600 text-white rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
-                  {isLoading ? <RefreshCw size={32} className="animate-spin" /> : <Clock size={32} />} Clock Out
+
+                {/* Tombol Pulang */}
+                <button 
+                  onClick={() => handleAbsen('Pulang')} 
+                  disabled={isLoading || !todayStatus.hasClockIn || todayStatus.hasClockOut} 
+                  className={`h-40 rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 disabled:bg-slate-300 ${todayStatus.hasClockOut ? 'bg-slate-300 text-slate-500' : 'bg-rose-600 text-white'}`}
+                >
+                  {isLoading ? <RefreshCw size={32} className="animate-spin" /> : <Clock size={32} />} 
+                  {todayStatus.hasClockOut ? 'Sudah Pulang' : 'Clock Out'}
                 </button>
               </div>
               
