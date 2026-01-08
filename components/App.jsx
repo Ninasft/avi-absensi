@@ -429,9 +429,13 @@ const App = () => {
             )}
           </div>
 
-          <button onClick={() => setShowLogoutConfirm(true)} className="p-3 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-xl transition-all">
+          <button
+            type="button"
+            onClick={() => setShowLogoutConfirm(true)}
+          >
             <LogOut size={20} />
           </button>
+
         </div>
       </nav>
 
