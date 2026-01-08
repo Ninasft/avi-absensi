@@ -245,98 +245,97 @@ const App = () => {
   };
 
   const handleAbsen = async (action, note = "") => {
-    // 1. CEK KONEKSI
+    // 1. CEK KONEKSI & LOADING
     if (isLoading || !supabaseReady) {
-      showAlert("Sistem Sibuk", "Mohon tunggu, data sedang diproses atau koneksi belum siap.", "warning");
+      showAlert("Sistem Sibuk", "Mohon tunggu, data sedang diproses.", "warning");
       return;
     }
 
-    const now = Date.now() + (7 * 60 * 60 * 1000); // Waktu WIB
-    const currentHour = new Date(now).getHours();
-    const todayStr = new Date(now).toLocaleDateString('id-ID');
+    // Gunakan waktu asli sistem (JavaScript akan otomatis menyesuaikan ke waktu lokal user/WIB)
+    const nowObj = new Date();
+    const currentHour = nowObj.getHours();
+    const todayStr = nowObj.toLocaleDateString('id-ID');
+    const timestamp = nowObj.getTime();
 
     setIsLoading(true);
 
-    // 2. CEK APAKAH SUDAH ABSEN HARI INI (Logic Duplicate)
-    const duplicate = logs.find(l => 
+    // 2. CEK RIWAYAT HARI INI
+    const userLogsToday = logs.filter(l => 
       l.nama === appUser.nama && 
       l.tipe === absensiType && 
-      l.aksi === action && 
       new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr
     );
 
-    // JIKA SUDAH ABSEN: Langsung stop di sini, jangan cek jam lagi.
-    if (duplicate) {
-      showAlert("Sudah Terdaftar", `Halo ${appUser.nama}, Anda sudah melakukan ${action} ${absensiType} hari ini.`, 'info');
+    const hasClockIn = userLogsToday.some(l => l.aksi === 'Masuk');
+    const hasClockOut = userLogsToday.some(l => l.aksi === 'Pulang');
+
+    // 3. VALIDASI PESAN (SUDAH ABSEN)
+    if (action === 'Masuk' && hasClockIn) {
+      showAlert("Sudah Absen", `Halo ${appUser.nama}, Anda sudah Masuk hari ini.`, 'info');
       setIsLoading(false);
       return;
     }
 
-    // 3. VALIDASI URUTAN: Harus Masuk dulu baru bisa Pulang
-    if (action === 'Pulang') {
-      const hasMasuk = logs.find(l => 
-        l.nama === appUser.nama && 
-        l.tipe === absensiType && 
-        l.aksi === 'Masuk' && 
-        new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr
-      );
-      
-      if (!hasMasuk) {
-        showAlert("Urutan Salah", "Silakan absen Masuk terlebih dahulu.", "warning");
-        setIsLoading(false);
-        return;
-      }
+    if (action === 'Pulang' && hasClockOut) {
+      showAlert("Sudah Selesai", `Halo ${appUser.nama}, Anda sudah Pulang hari ini. Sampai jumpa besok!`, 'info');
+      setIsLoading(false);
+      return;
     }
 
-    // 4. VALIDASI JAM (Hanya jalan kalau belum ada absen hari ini)
-    // Sesi UMUM
+    // 4. VALIDASI URUTAN
+    if (action === 'Pulang' && !hasClockIn) {
+      showAlert("Urutan Salah", "Anda belum absen Masuk. Silakan Masuk terlebih dahulu.", "warning");
+      setIsLoading(false);
+      return;
+    }
+
+    // 5. VALIDASI JAM (Hanya jika belum absen hari ini)
     if (absensiType === 'Umum') {
       if (action === 'Masuk' && currentHour < 8) {
-        showAlert("Waktu Belum Dibuka", `Absensi Masuk UMUM baru dibuka mulai pukul 08:00 WIB.`, 'warning');
+        showAlert("Waktu Belum Dibuka", `Absen Masuk Umum dibuka mulai jam 08:00.`, 'warning');
         setIsLoading(false);
         return;
       }
       if (action === 'Pulang' && currentHour < 16) {
-        showAlert("Belum Waktunya Pulang", `Absen Pulang UMUM baru tersedia pukul 16:00 WIB.`, 'info');
+        showAlert("Belum Waktunya", `Absen Pulang Umum tersedia mulai jam 16:00.`, 'info');
         setIsLoading(false);
         return;
       }
     }
 
-    // Sesi LIVE
     if (absensiType === 'Live') {
       if (action === 'Masuk' && currentHour < 13) {
-        showAlert("Waktu Belum Dibuka", `Absensi Masuk LIVE baru dibuka mulai pukul 13:00 WIB.`, 'warning');
+        showAlert("Sesi Belum Mulai", `Absen Live baru dibuka jam 13:00.`, 'warning');
         setIsLoading(false);
         return;
       }
       if (action === 'Pulang' && currentHour < 17) {
-        showAlert("Belum Waktunya Pulang", `Absen Pulang LIVE baru tersedia pukul 17:00 WIB.`, 'info');
+        showAlert("Belum Selesai", `Absen Pulang Live tersedia mulai jam 17:00.`, 'info');
         setIsLoading(false);
         return;
       }
     }
 
-    // 5. PROSES SIMPAN KE DATABASE
+    // 6. SIMPAN DATA
     try {
       await addAbsensiLog({
         nama: appUser.nama,
         tipe: absensiType,
         aksi: action,
         keterangan: note || "-",
-        waktu: new Date(now).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-        tanggal_display: new Date(now).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }),
-        bulan_index: new Date(now).getMonth(),
-        timestamp: now,
-        hari_index: Math.floor(now / 86400000)
+        waktu: nowObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+        tanggal_display: nowObj.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' }),
+        bulan_index: nowObj.getMonth(),
+        timestamp: timestamp,
+        hari_index: Math.floor(timestamp / 86400000)
       });
       
       showStatus(`${action} ${absensiType} Berhasil!`, "success");
       setReasonText("");
       setShowReasonModal(null);
     } catch (e) {
-      console.error("Absen save error:", e);
-      showAlert("Gagal", "Terjadi kesalahan saat menyimpan. Coba lagi.", "error");
+      console.error("Error simpan:", e);
+      showAlert("Gagal", "Terjadi kesalahan koneksi. Silakan coba lagi.", "error");
     } finally { 
       setIsLoading(false); 
     }
@@ -521,8 +520,11 @@ const App = () => {
     if (!appUser) return { hasClockIn: false, hasClockOut: false };
     
     const today = new Date().toLocaleDateString('id-ID');
+    
+    // Tambahkan filter l.tipe === absensiType agar sesi Umum dan Live terpisah
     const userLogsToday = logs.filter(log => 
       log.nama === appUser?.nama && 
+      log.tipe === absensiType && // Filter berdasarkan sesi yang dipilih
       new Date(log.timestamp).toLocaleDateString('id-ID') === today
     );
 
@@ -530,7 +532,7 @@ const App = () => {
     const hasClockOut = userLogsToday.some(log => log.aksi === 'Pulang');
 
     return { hasClockIn, hasClockOut };
-  }, [logs, appUser]);
+  }, [logs, appUser, absensiType]); // Tambahkan absensiType di sini
   // ============================================
   // RENDER
   // ============================================
