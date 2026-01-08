@@ -49,6 +49,7 @@ const App = () => {
   const UPAH_PER_JAM = 25000;
   const daftarBulan = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
+  // UPDATED: Removed Live access for Abub, Dedi, and Rendy
   const daftarPegawai = [
     { id: "abub", nama: "Abub", akses: ["Umum"] },
     { id: "rendy", nama: "Rendy", akses: ["Umum"] },
@@ -199,21 +200,38 @@ const App = () => {
     } finally { setIsLoading(false); }
   };
 
+  // UPDATED: Enhanced password update with detailed success/error messages
   const updatePassword = async (targetUsername = null, targetPass = null) => {
     const isSelf = !targetUsername;
     const finalUsername = isSelf ? appUser.username : targetUsername;
     const finalPass = isSelf ? newPass : targetPass;
 
-    if (!finalPass || finalPass.length < 4) {
-      showStatus("Password minimal 4 karakter", "error");
+    // Validation
+    if (!finalUsername) {
+      showAlert("Gagal Memperbarui", "Silakan pilih pegawai terlebih dahulu.", "error");
       return;
     }
 
+    if (!finalPass || finalPass.trim() === "") {
+      showAlert("Gagal Memperbarui", "Password tidak boleh kosong.", "error");
+      return;
+    }
+
+    if (finalPass.length < 4) {
+      showAlert("Gagal Memperbarui", "Password minimal harus 4 karakter untuk keamanan.", "error");
+      return;
+    }
+
+    setIsLoading(true);
+
     try {
+      // Save to Firestore
       await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'user_configs', finalUsername), {
-        password: finalPass
+        password: finalPass,
+        lastUpdated: Date.now()
       }, { merge: true });
 
+      // Log admin activity if reset by admin
       if (!isSelf) {
         await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'admin_logs'), {
           admin: appUser.nama,
@@ -223,11 +241,42 @@ const App = () => {
         });
       }
 
-      showStatus(`Password ${finalUsername} berhasil diperbarui`, "success");
-      if (isSelf) setNewPass("");
-      else setResetPassTarget({ username: '', password: '' });
-    } catch (e) {
-      showStatus("Gagal memperbarui password", "error");
+      // Success messages
+      if (isSelf) {
+        showAlert(
+          "Password Berhasil Diperbarui! ✓", 
+          `Password Anda telah berhasil diubah. Silakan gunakan password baru untuk login berikutnya.`, 
+          "success"
+        );
+        setNewPass("");
+      } else {
+        showAlert(
+          "Reset Password Berhasil! ✓", 
+          `Password untuk ${finalUsername} telah berhasil direset. User dapat login dengan password baru.`, 
+          "success"
+        );
+        setResetPassTarget({ username: '', password: '' });
+      }
+
+    } catch (error) {
+      console.error("Password update error:", error);
+      
+      // Detailed error messages
+      let errorMessage = "Terjadi kesalahan saat memperbarui password. ";
+      
+      if (error.code === 'permission-denied') {
+        errorMessage += "Anda tidak memiliki izin untuk melakukan aksi ini.";
+      } else if (error.code === 'unavailable') {
+        errorMessage += "Koneksi ke server terputus. Periksa koneksi internet Anda.";
+      } else if (error.message) {
+        errorMessage += error.message;
+      } else {
+        errorMessage += "Silakan coba lagi dalam beberapa saat.";
+      }
+
+      showAlert("Gagal Memperbarui Password", errorMessage, "error");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -294,6 +343,13 @@ const App = () => {
   }, [logs, filterMonth, appUser]);
 
   const totalGajiLiveSemua = Object.values(stats).reduce((a, b) => a + b.gajiLive, 0);
+
+  // UPDATED: Check if current user has Live access
+  const hasLiveAccess = useMemo(() => {
+    if (!appUser) return false;
+    const pegawai = daftarPegawai.find(p => p.nama === appUser.nama);
+    return pegawai?.akses.includes('Live') || false;
+  }, [appUser]);
 
   return (
     <div className={`min-h-screen transition-all ${darkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'} font-sans pb-24 md:pb-0`}>
@@ -376,33 +432,34 @@ const App = () => {
                 </p>
               </div>
 
-              <div className="space-y-6">
+              {/* UPDATED: Only show session toggle if user has Live access */}
+              {hasLiveAccess && (
                 <div className={`flex p-2 rounded-[2.5rem] border-2 ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-100 border-slate-200'}`}>
                   {['Umum', 'Live'].map(t => (
                     <button key={t} onClick={() => setAbsensiType(t)} className={`flex-1 py-4 rounded-[2rem] font-black text-xs uppercase tracking-widest transition-all ${absensiType === t ? 'bg-orange-500 text-white shadow-xl shadow-orange-500/20' : 'text-slate-500'}`}>Sesi {t}</button>
                   ))}
                 </div>
+              )}
 
+              <div className="grid grid-cols-2 gap-4">
+                <button onClick={() => handleAbsen('Masuk')} className="h-40 bg-emerald-600 text-white rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all">
+                  <CheckCircle2 size={32} /> Clock In
+                </button>
+                <button onClick={() => handleAbsen('Pulang')} className="h-40 bg-rose-600 text-white rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all">
+                  <Clock size={32} /> Clock Out
+                </button>
+              </div>
+              
+              {absensiType === 'Umum' && (
                 <div className="grid grid-cols-2 gap-4">
-                  <button onClick={() => handleAbsen('Masuk')} className="h-40 bg-emerald-600 text-white rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all">
-                    <CheckCircle2 size={32} /> Clock In
+                  <button onClick={() => setShowReasonModal('Izin')} className="py-6 bg-amber-500 text-white rounded-[2rem] font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-all">
+                    <FileText size={18} /> Izin
                   </button>
-                  <button onClick={() => handleAbsen('Pulang')} className="h-40 bg-rose-600 text-white rounded-[3rem] font-black uppercase text-[10px] shadow-lg flex flex-col items-center justify-center gap-3 active:scale-95 transition-all">
-                    <Clock size={32} /> Clock Out
+                  <button onClick={() => setShowReasonModal('Sakit')} className="py-6 bg-blue-500 text-white rounded-[2rem] font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-all">
+                    <Thermometer size={18} /> Sakit
                   </button>
                 </div>
-                
-                {absensiType === 'Umum' && (
-                  <div className="grid grid-cols-2 gap-4">
-                    <button onClick={() => setShowReasonModal('Izin')} className="py-6 bg-amber-500 text-white rounded-[2rem] font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-all">
-                      <FileText size={18} /> Izin
-                    </button>
-                    <button onClick={() => setShowReasonModal('Sakit')} className="py-6 bg-blue-500 text-white rounded-[2rem] font-black uppercase text-[10px] shadow-lg flex items-center justify-center gap-3 active:scale-95 transition-all">
-                      <Thermometer size={18} /> Sakit
-                    </button>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
           )}
 
@@ -426,7 +483,7 @@ const App = () => {
                   { label: 'Hadir', val: stats[appUser.nama]?.hadir || 0, color: 'bg-emerald-500' },
                   { label: 'Izin', val: stats[appUser.nama]?.izin || 0, color: 'bg-amber-500' },
                   { label: 'Sakit', val: stats[appUser.nama]?.sakit || 0, color: 'bg-blue-500' },
-                  { label: 'Gaji Live', val: `Rp ${(stats[appUser.nama]?.gajiLive || 0).toLocaleString('id-ID')}`, color: 'bg-indigo-600' }
+                  ...(hasLiveAccess ? [{ label: 'Gaji Live', val: `Rp ${(stats[appUser.nama]?.gajiLive || 0).toLocaleString('id-ID')}`, color: 'bg-indigo-600' }] : [])
                 ].map((st, i) => (
                   <div key={i} className={`${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} border-2 p-5 rounded-3xl shadow-sm`}>
                     <p className="text-[9px] font-black uppercase opacity-40 mb-1">{st.label}</p>
@@ -473,8 +530,21 @@ const App = () => {
                   <div className="space-y-4">
                     <p className="text-[10px] font-black uppercase opacity-40 tracking-widest ml-4">Ganti Password Mandiri</p>
                     <div className="flex gap-2">
-                       <input type="password" value={newPass} onChange={e => setNewPass(e.target.value)} className={`flex-1 p-4 rounded-2xl border-2 outline-none transition-all font-bold ${darkMode ? 'bg-slate-800 border-slate-700 focus:border-orange-500' : 'bg-slate-50 border-slate-200 focus:border-orange-500'}`} placeholder="Password baru..." />
-                       <button onClick={() => updatePassword()} className="px-6 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] hover:bg-indigo-700"><Save size={18} /></button>
+                       <input 
+                         type="password" 
+                         value={newPass} 
+                         onChange={e => setNewPass(e.target.value)} 
+                         className={`flex-1 p-4 rounded-2xl border-2 outline-none transition-all font-bold ${darkMode ? 'bg-slate-800 border-slate-700 focus:border-orange-500' : 'bg-slate-50 border-slate-200 focus:border-orange-500'}`} 
+                         placeholder="Password baru..." 
+                         disabled={isLoading}
+                       />
+                       <button 
+                         onClick={() => updatePassword()} 
+                         className="px-6 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                         disabled={isLoading || !newPass}
+                       >
+                         {isLoading ? <RefreshCw size={18} className="animate-spin" /> : <Save size={18} />}
+                       </button>
                     </div>
                   </div>
                 </div>
@@ -492,12 +562,30 @@ const App = () => {
                   <div className={`p-8 rounded-[3rem] border-2 shadow-xl ${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white'}`}>
                     <h2 className="text-2xl font-black mb-8 uppercase tracking-tight flex items-center gap-3 text-orange-500"><Lock size={28} /> Super User Reset</h2>
                     <div className="space-y-4">
-                       <select value={resetPassTarget.username} onChange={e => setResetPassTarget({...resetPassTarget, username: e.target.value})} className={`w-full p-4 rounded-2xl border-2 outline-none font-bold ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}>
+                       <select 
+                         value={resetPassTarget.username} 
+                         onChange={e => setResetPassTarget({...resetPassTarget, username: e.target.value})} 
+                         className={`w-full p-4 rounded-2xl border-2 outline-none font-bold ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`}
+                         disabled={isLoading}
+                       >
                           <option value="">Pilih Pegawai...</option>
                           {daftarPegawai.map(p => <option key={p.id} value={p.id}>{p.nama}</option>)}
                        </select>
-                       <input type="text" value={resetPassTarget.password} onChange={e => setResetPassTarget({...resetPassTarget, password: e.target.value})} className={`w-full p-4 rounded-2xl border-2 outline-none font-bold ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`} placeholder="Password Baru Pegawai..." />
-                       <button onClick={() => updatePassword(resetPassTarget.username, resetPassTarget.password)} className="w-full py-5 bg-rose-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-rose-600">Reset Password User</button>
+                       <input 
+                         type="text" 
+                         value={resetPassTarget.password} 
+                         onChange={e => setResetPassTarget({...resetPassTarget, password: e.target.value})} 
+                         className={`w-full p-4 rounded-2xl border-2 outline-none font-bold ${darkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'}`} 
+                         placeholder="Password Baru Pegawai..." 
+                         disabled={isLoading}
+                       />
+                       <button 
+                         onClick={() => updatePassword(resetPassTarget.username, resetPassTarget.password)} 
+                         className="w-full py-5 bg-rose-500 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-rose-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                         disabled={isLoading || !resetPassTarget.username || !resetPassTarget.password}
+                       >
+                         {isLoading ? <><RefreshCw size={18} className="animate-spin" /> Memproses...</> : 'Reset Password User'}
+                       </button>
                     </div>
                   </div>
 
@@ -628,16 +716,27 @@ const App = () => {
         </div>
       )}
 
-      {/* GLOBAL MODAL ALERT */}
+      {/* GLOBAL MODAL ALERT - UPDATED with success type styling */}
       {alertModal.show && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md">
            <div className={`w-full max-w-sm ${darkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200'} border-4 rounded-[3rem] p-10 shadow-2xl text-center`}>
-              <div className={`w-20 h-20 mx-auto mb-6 rounded-[1.5rem] flex items-center justify-center ${alertModal.type === 'warning' ? 'bg-amber-100 text-amber-600' : 'bg-orange-100 text-orange-600'}`}>
-                 <AlertCircle size={40} />
+              <div className={`w-20 h-20 mx-auto mb-6 rounded-[1.5rem] flex items-center justify-center ${
+                alertModal.type === 'success' ? 'bg-emerald-100 text-emerald-600' :
+                alertModal.type === 'warning' ? 'bg-amber-100 text-amber-600' : 
+                'bg-orange-100 text-orange-600'
+              }`}>
+                 {alertModal.type === 'success' ? <CheckCircle2 size={40} /> : <AlertCircle size={40} />}
               </div>
               <h3 className="text-2xl font-black mb-2">{alertModal.title}</h3>
               <p className="text-sm opacity-60 mb-8 leading-relaxed">{alertModal.message}</p>
-              <button onClick={() => setAlertModal({ ...alertModal, show: false })} className="w-full py-5 bg-orange-500 text-white rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all">Tutup</button>
+              <button 
+                onClick={() => setAlertModal({ ...alertModal, show: false })} 
+                className={`w-full py-5 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest active:scale-95 transition-all text-white ${
+                  alertModal.type === 'success' ? 'bg-emerald-500' : 'bg-orange-500'
+                }`}
+              >
+                Tutup
+              </button>
            </div>
         </div>
       )}
