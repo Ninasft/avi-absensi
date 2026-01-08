@@ -255,7 +255,7 @@ const App = () => {
     }
 
     const now = Date.now() + (7 * 60 * 60 * 1000);
-    const currentHour = new Date().getUTCHours() + 7; // WIB
+    const currentHour = new Date(now).getHours();
     
 
     // Time validation for Umum
@@ -288,7 +288,8 @@ const App = () => {
     }
     
     setIsLoading(true);
-    const todayStr = now.toLocaleDateString('id-ID');
+    const todayStr = new Date(now).toLocaleDateString('id-ID');
+
     
     // Check duplicate
     const duplicate = logs.find(l => 
