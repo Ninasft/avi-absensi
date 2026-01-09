@@ -20,7 +20,7 @@ import {
   Sun, Moon, Megaphone, Activity, Users, Video, Calendar,
   Thermometer, Info, ChevronRight, LayoutDashboard, XCircle,
   AlertCircle, FileText, Lock, MessageSquare, ListFilter, Save,
-  RefreshCw, Trash2, Eye, Inbox
+  RefreshCw, Trash2, Eye, Inbox, Fingerprint
 } from 'lucide-react';
 
 const App = () => {
@@ -1036,47 +1036,7 @@ const deleteLog = async (logId) => {
                 </div>
               </div>
 
-              {/* PAGE: RIWAYAT SAYA (UNTUK KARYAWAN) */}
-{currentPage === 'riwayat_saya' && appUser.role !== 'admin' && (
-  <div className="max-w-xl mx-auto p-4 space-y-6 animate-in slide-in-from-bottom-4">
-    <div className="flex justify-between items-center mb-4">
-      <h2 className="text-2xl font-black uppercase">Riwayat Absensi</h2>
-      <select 
-        value={filterMonth} 
-        onChange={e => setFilterMonth(e.target.value)}
-        className="p-2 rounded-xl border-2 font-bold text-xs"
-      >
-        {daftarBulan.map((b, i) => <option key={i} value={i}>{b}</option>)}
-      </select>
-    </div>
-
-    <div className="space-y-4">
-      {/* Mengambil logs milik user yang sedang login saja */}
-      {logs
-        .filter(l => l.nama === appUser.nama && l.bulan_index === parseInt(filterMonth))
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .map((log, idx) => (
-          <div key={idx} className="bg-white dark:bg-slate-900 p-5 rounded-[2rem] border-2 shadow-sm flex justify-between items-center">
-            <div>
-              <p className="text-[10px] font-black opacity-40 uppercase">{log.tanggal_display}</p>
-              <p className="font-black text-lg uppercase">{log.aksi}</p>
-              <p className="text-[10px] font-bold text-orange-500">{log.tipe} Session • {log.waktu}</p>
-            </div>
-            <div className="text-right">
-              <span className={`px-4 py-2 rounded-full text-[9px] font-black uppercase ${
-                log.status_approval === 'Disetujui' ? 'bg-emerald-100 text-emerald-600' : 
-                log.status_approval === 'Ditolak' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'
-              }`}>
-                {log.status_approval || (log.aksi === 'Masuk' || log.aksi === 'Pulang' ? 'Selesai' : 'Pending')}
-              </span>
-            </div>
-          </div>
-        ))}
-    </div>
-  </div>
-)}
-
-              {/* SECTION: ABSENSI LIVE */}
+              {/* SECTION: LIVE SESSION STATUS */}
               <div className="space-y-6 pt-10 border-t-2 border-dashed border-slate-200 dark:border-slate-800">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
@@ -1264,7 +1224,7 @@ const deleteLog = async (logId) => {
            <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl gap-1">
           
           {/* Tombol Beranda/Absen (Hanya muncul untuk Pegawai) */}
-          {appUser.role === 'pegawai' && (
+          {appUser.role !== 'admin' && (
             <button 
               onClick={() => setCurrentPage('absen')}
               className={`p-2.5 rounded-xl transition-all ${currentPage === 'absen' ? 'bg-orange-500 shadow-lg shadow-orange-500/40' : 'bg-transparent hover:bg-white/5'}`}
