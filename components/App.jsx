@@ -584,6 +584,25 @@ const deleteLog = async (logId) => {
 
   const attendanceStatus = useMemo(() => {if (!appUser) return { canIn: false, canOut: false, incomplete: null, isSunday: false, message: "" };
 
+  const liveMonthlySummary = useMemo(() => {
+    const talentsWithLive = daftarPegawai.filter(p => p.akses.includes('Live'));
+  
+    const perTalent = talentsWithLive.map(p => ({
+      nama: p.nama,
+      jam: stats[p.nama]?.jamLive || 0,
+      gaji: stats[p.nama]?.gajiLive || 0
+    })).filter(t => t.jam > 0);
+  
+    const totalJam = perTalent.reduce((a, b) => a + b.jam, 0);
+    const totalGaji = perTalent.reduce((a, b) => a + b.gaji, 0);
+  
+    return {
+      totalJam,
+      totalGaji,
+      perTalent
+    };
+  }, [stats]);
+
   const today = new Date();
   const isSunday = today.getDay() === 0;
   const todayStr = today.toLocaleDateString('id-ID');
@@ -1324,6 +1343,49 @@ const deleteLog = async (logId) => {
                     );
                   })}
               </div>
+              <div className="p-8 rounded-[3rem] border-2 shadow-xl bg-gradient-to-br from-indigo-600 to-purple-600 text-white">
+  <h3 className="text-2xl font-black uppercase mb-6">
+    Ringkasan Live – {daftarBulan[filterMonth]}
+  </h3>
+
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+    <div className="bg-white/10 p-6 rounded-2xl">
+      <p className="text-[10px] uppercase font-black opacity-70">Total Jam Live</p>
+      <p className="text-4xl font-black">{liveMonthlySummary.totalJam} Jam</p>
+    </div>
+
+    <div className="bg-white/10 p-6 rounded-2xl">
+      <p className="text-[10px] uppercase font-black opacity-70">Total Gaji Live</p>
+      <p className="text-4xl font-black">
+        Rp {liveMonthlySummary.totalGaji.toLocaleString('id-ID')}
+      </p>
+    </div>
+  </div>
+
+  {/* PER TALENT */}
+  <div className="space-y-4">
+    <p className="text-xs font-black uppercase tracking-widest opacity-70">
+      Per Talent
+    </p>
+
+    {liveMonthlySummary.perTalent.length === 0 ? (
+      <p className="italic opacity-70">Belum ada live di bulan ini</p>
+    ) : (
+      liveMonthlySummary.perTalent.map((t, i) => (
+        <div
+          key={i}
+          className="flex items-center justify-between bg-white/10 p-4 rounded-xl"
+        >
+          <p className="font-black">{t.nama}</p>
+          <p className="font-black text-sm">
+            {t.jam} Jam — Rp {t.gaji.toLocaleString('id-ID')}
+          </p>
+        </div>
+      ))
+    )}
+  </div>
+</div>
+
 
               {/* SECTION: LIVE SESSION STATUS */}
               <div className="space-y-6 pt-10 border-t-2 border-dashed border-slate-200 dark:border-slate-800">
