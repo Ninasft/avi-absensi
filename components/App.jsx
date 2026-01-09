@@ -360,6 +360,41 @@ const App = () => {
       setIsLoading(false);
     }
   };
+// Fungsi untuk Admin menyetujui Izin/Sakit
+const updateStatusLog = async (logId, status) => {
+  setIsLoading(true);
+  try {
+    const { error } = await supabase
+      .from('absensi_logs')
+      .update({ status_approval: status })
+      .eq('id', logId);
+    if (error) throw error;
+    showStatus(`Status berhasil diupdate ke: ${status}`, "success");
+  } catch (err) {
+    console.error(err);
+    showAlert("Gagal", "Koneksi bermasalah saat update status.");
+  } finally {
+    setIsLoading(false);
+  }
+};
+
+// Fungsi untuk menghapus log (Membatalkan)
+const deleteLog = async (logId) => {
+  if (!confirm("Yakin ingin membatalkan/menghapus data ini?")) return;
+  setIsLoading(true);
+  try {
+    const { error } = await supabase
+      .from('absensi_logs')
+      .delete()
+      .eq('id', logId);
+    if (error) throw error;
+    showStatus("Data berhasil dihapus", "success");
+  } catch (err) {
+    showAlert("Gagal", "Gagal menghapus data.");
+  } finally {
+    setIsLoading(false);
+  }
+};
 
   const handleLogout = () => {
     setShowLogoutConfirm(true);
@@ -456,69 +491,69 @@ const App = () => {
     return pegawai?.akses.includes('Live') || false;
   }, [appUser]);
 
-  const attendanceStatus = useMemo(() => {
-    if (!appUser) return { canIn: false, canOut: false, incomplete: null, isSunday: false, message: "" };
+  const attendanceStatus = useMemo(() => {if (!appUser) return { canIn: false, canOut: false, incomplete: null, isSunday: false, message: "" };
 
-    const today = new Date();
-    const isSunday = today.getDay() === 0;
-    const todayStr = today.toLocaleDateString('id-ID');
-    const currentHour = today.getHours();
+  const today = new Date();
+  const isSunday = today.getDay() === 0;
+  const todayStr = today.toLocaleDateString('id-ID');
+  const currentHour = today.getHours();
 
-    const userLogs = logs.filter(l => l.nama === appUser.nama && l.tipe === absensiType);
-    const logsToday = userLogs.filter(l => new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr);
+  const userLogs = logs.filter(l => l.nama === appUser.nama && l.tipe === absensiType);
+  const logsToday = userLogs.filter(l => new Date(l.timestamp).toLocaleDateString('id-ID') === todayStr);
 
-    const hasIn = logsToday.some(l => l.aksi === 'Masuk');
-    const hasOut = logsToday.some(l => l.aksi === 'Pulang');
-    const isExcused = logsToday.some(l => l.aksi === 'Izin' || l.aksi === 'Sakit');
+  const hasIn = logsToday.some(l => l.aksi === 'Masuk');
+  const hasOut = logsToday.some(l => l.aksi === 'Pulang');
+  
+  // --- FITUR BARU: APPROVAL STATUS ---
+  const activeExcuse = logsToday.find(l => l.aksi === 'Izin' || l.aksi === 'Sakit');
+  const isExcused = !!activeExcuse;
+  const excuseStatus = activeExcuse?.status_approval || 'Pending';
 
-    const sortedLogs = [...userLogs].sort((a, b) => b.timestamp - a.timestamp);
-    const lastLog = sortedLogs[0];
-    const isIncomplete = (lastLog && lastLog.aksi === 'Masuk' && new Date(lastLog.timestamp).toLocaleDateString('id-ID') !== todayStr) ? lastLog : null;
+  const sortedLogs = [...userLogs].sort((a, b) => b.timestamp - a.timestamp);
+  const lastLog = sortedLogs[0];
+  const isIncomplete = (lastLog && lastLog.aksi === 'Masuk' && new Date(lastLog.timestamp).toLocaleDateString('id-ID') !== todayStr) ? lastLog : null;
 
-    // --- LOGIKA PEMBATASAN WAKTU ---
-    let timeMessage = "";
-    let timeCanIn = false;
-    let timeCanOut = false;
+  // --- LOGIKA PEMBATASAN WAKTU (Tetap Dipertahankan) ---
+  let timeMessage = "";
+  let timeCanIn = false;
+  let timeCanOut = false;
 
-    if (absensiType === 'Umum') {
-      // Masuk Umum: Minimal Jam 08:00
-      if (currentHour < 8) {
-        timeMessage = "Absensi UMUM baru bisa dimulai jam 08:00 pagi.";
-      } else {
-        timeCanIn = true;
-      }
-      // Pulang Umum: Minimal Jam 16:00
-      if (currentHour < 16) {
-        timeMessage = hasIn ? "Clock Out UMUM baru bisa dilakukan jam 16:00." : timeMessage;
-      } else {
-        timeCanOut = true;
-      }
-    } else if (absensiType === 'Live') {
-      // Masuk Live: Minimal Jam 13:00
-      if (currentHour < 13) {
-        timeMessage = "Absensi LIVE baru bisa dimulai jam 13:00 siang.";
-      } else {
-        timeCanIn = true;
-      }
-      // Pulang Live: Minimal Jam 17:00
-      if (currentHour < 17) {
-        timeMessage = hasIn ? "Clock Out LIVE baru bisa dilakukan jam 17:00 sore." : timeMessage;
-      } else {
-        timeCanOut = true;
-      }
+  if (absensiType === 'Umum') {
+    if (currentHour < 8) {
+      timeMessage = "Absensi UMUM baru bisa dimulai jam 08:00 pagi.";
+    } else {
+      timeCanIn = true;
     }
+    if (currentHour < 16) {
+      timeMessage = hasIn ? "Clock Out UMUM baru bisa dilakukan jam 16:00." : timeMessage;
+    } else {
+      timeCanOut = true;
+    }
+  } else if (absensiType === 'Live') {
+    if (currentHour < 13) {
+      timeMessage = "Absensi LIVE baru bisa dimulai jam 13:00 siang.";
+    } else {
+      timeCanIn = true;
+    }
+    if (currentHour < 17) {
+      timeMessage = hasIn ? "Clock Out LIVE baru bisa dilakukan jam 17:00 sore." : timeMessage;
+    } else {
+      timeCanOut = true;
+    }
+  }
 
-    return {
-      canIn: !hasIn && !isExcused && !isIncomplete && !isSunday && timeCanIn,
-      canOut: hasIn && !hasOut && !isExcused && timeCanOut,
-      hasIn,
-      hasOut,
-      isExcused,
-      incomplete: isIncomplete,
-      isSunday,
-      message: timeMessage
-    };
-  }, [logs, appUser, absensiType]);
+  return {
+    canIn: !hasIn && !isExcused && !isIncomplete && !isSunday && timeCanIn,
+    canOut: hasIn && !hasOut && !isExcused && timeCanOut,
+    hasIn,
+    hasOut,
+    isExcused,
+    excuseStatus, // Ditambahkan untuk UI
+    incomplete: isIncomplete,
+    isSunday,
+    message: timeMessage
+  };
+}, [logs, appUser, absensiType]);
   // ============================================
   // RENDER
   // ============================================
@@ -676,6 +711,16 @@ const App = () => {
                   <p className="text-[10px] font-black uppercase text-orange-500 leading-relaxed">
                     {attendanceStatus.message || "Belum saatnya melakukan aktivitas absensi"}
                   </p>
+                </div>
+              )}
+              {/* STATUS PENGAJUAN HARI INI */}
+              {attendanceStatus.isExcused && (
+                <div className={`p-6 rounded-[2rem] border-2 text-center mb-6 ${
+                  attendanceStatus.excuseStatus === 'Disetujui' ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-amber-50 border-amber-200 text-amber-700'
+                }`}>
+                  <p className="text-[10px] font-black uppercase">Status Pengajuan Hari Ini:</p>
+                  <p className="text-xl font-black uppercase">{attendanceStatus.excuseStatus}</p>
+                  <p className="text-[10px] italic">"Izin/Sakit hanya berlaku untuk hari ini"</p>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
@@ -910,6 +955,8 @@ const App = () => {
                   </select>
                 </div>
               </div>
+              
+              
 
               {/* SECTION: ABSENSI UMUM */}
               <div className="space-y-6">
@@ -944,6 +991,46 @@ const App = () => {
                   })}
                 </div>
               </div>
+
+              {/* PAGE: RIWAYAT SAYA (UNTUK KARYAWAN) */}
+{currentPage === 'riwayat_saya' && appUser.role !== 'admin' && (
+  <div className="max-w-xl mx-auto p-4 space-y-6 animate-in slide-in-from-bottom-4">
+    <div className="flex justify-between items-center mb-4">
+      <h2 className="text-2xl font-black uppercase">Riwayat Absensi</h2>
+      <select 
+        value={filterMonth} 
+        onChange={e => setFilterMonth(e.target.value)}
+        className="p-2 rounded-xl border-2 font-bold text-xs"
+      >
+        {daftarBulan.map((b, i) => <option key={i} value={i}>{b}</option>)}
+      </select>
+    </div>
+
+    <div className="space-y-4">
+      {/* Mengambil logs milik user yang sedang login saja */}
+      {logs
+        .filter(l => l.nama === appUser.nama && l.bulan_index === parseInt(filterMonth))
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .map((log, idx) => (
+          <div key={idx} className="bg-white dark:bg-slate-900 p-5 rounded-[2rem] border-2 shadow-sm flex justify-between items-center">
+            <div>
+              <p className="text-[10px] font-black opacity-40 uppercase">{log.tanggal_display}</p>
+              <p className="font-black text-lg uppercase">{log.aksi}</p>
+              <p className="text-[10px] font-bold text-orange-500">{log.tipe} Session • {log.waktu}</p>
+            </div>
+            <div className="text-right">
+              <span className={`px-4 py-2 rounded-full text-[9px] font-black uppercase ${
+                log.status_approval === 'Disetujui' ? 'bg-emerald-100 text-emerald-600' : 
+                log.status_approval === 'Ditolak' ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-400'
+              }`}>
+                {log.status_approval || (log.aksi === 'Masuk' || log.aksi === 'Pulang' ? 'Selesai' : 'Pending')}
+              </span>
+            </div>
+          </div>
+        ))}
+    </div>
+  </div>
+)}
 
               {/* SECTION: ABSENSI LIVE */}
               <div className="space-y-6 pt-10 border-t-2 border-dashed border-slate-200 dark:border-slate-800">
@@ -980,7 +1067,60 @@ const App = () => {
                   })}
                 </div>
               </div>
+
+              {/* Tabel Rekap Karyawan */}
+    <div className="grid grid-cols-1 gap-4">
+      {daftarPegawai.map(pegawai => {
+        const s = stats[pegawai.nama] || {};
+        return (
+          <div key={pegawai.id} className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border-2 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-black text-lg uppercase">{pegawai.nama}</h3>
+              <div className="flex gap-4 text-[10px] font-black uppercase">
+                <span className="text-emerald-500">Hadir: {s.hadir || 0}</span>
+                <span className="text-amber-500">Izin: {s.izin || 0}</span>
+                <span className="text-blue-500">Sakit: {s.sakit || 0}</span>
+              </div>
             </div>
+
+            {/* Tabel Log per Karyawan */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="opacity-40 uppercase font-black border-b">
+                    <th className="pb-2">Tanggal</th>
+                    <th className="pb-2">Aksi</th>
+                    <th className="pb-2">Status</th>
+                    <th className="pb-2">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {s.logs?.map((log, idx) => (
+                    <tr key={idx} className="border-b last:border-0">
+                      <td className="py-3 font-bold">{log.tanggal_display}</td>
+                      <td className="py-3 font-black uppercase">{log.aksi}</td>
+                      <td className="py-3">
+                        {log.status_approval || (log.aksi === 'Masuk' || log.aksi === 'Pulang' ? 'Auto' : 'Pending')}
+                      </td>
+                      <td className="py-3">
+                        {(log.aksi === 'Izin' || log.aksi === 'Sakit') && !log.status_approval && (
+                          <div className="flex gap-2">
+                            <button onClick={() => updateStatusLog(log.id, 'Disetujui')} className="text-emerald-500 font-bold underline">Approve</button>
+                            <button onClick={() => deleteLog(log.id)} className="text-rose-500 font-bold underline">Batalkan</button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </div>
+            
           )}
         </main>
       )}
