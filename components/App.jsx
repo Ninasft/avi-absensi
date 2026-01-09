@@ -647,6 +647,50 @@ const deleteLog = async (logId) => {
               </div>
             </div>
           )}
+          {/* HALAMAN 1: PROFILE & SETTINGS (Semua Role) */}
+        {currentPage === 'profile' && (
+          <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in">
+            <button 
+              onClick={() => setCurrentPage(appUser.role === 'admin' ? 'history' : 'absen')}
+              className="flex items-center gap-2 font-black uppercase text-[10px] tracking-widest opacity-60 hover:opacity-100 transition-all"
+            >
+              <ChevronRight size={16} className="rotate-180" /> Kembali
+            </button>
+            {renderProfile()}
+          </div>
+        )}
+
+        {/* HALAMAN 2: DASHBOARD ABSENSI (Hanya Pegawai) */}
+        {appUser.role === 'pegawai' && currentPage === 'absen' && (
+          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
+            {renderHero()}
+            {renderStats()}
+            {renderAttendanceActions()}
+          </div>
+        )}
+
+        {/* HALAMAN 3: MONITORING (Admin) ATAU RIWAYAT (Pegawai) */}
+        {currentPage === 'history' && (
+          <div className="space-y-8 animate-in fade-in">
+            {appUser.role === 'admin' ? (
+              <>
+                <div className="flex justify-between items-end mb-6">
+                  <div>
+                    <h2 className="text-3xl font-black italic tracking-tighter uppercase">Monitoring</h2>
+                    <p className="text-[10px] font-bold opacity-50 tracking-[0.2em] uppercase">Panel Kendali Admin</p>
+                  </div>
+                </div>
+                {renderAdminLogs()}
+                {renderAdminSettings()}
+              </>
+            ) : (
+              <div className="space-y-8">
+                <h2 className="text-3xl font-black italic tracking-tighter uppercase text-center">Riwayat Anda</h2>
+                {renderLogs()}
+              </div>
+            )}
+          </div>
+        )}
           
           {/* INFO HARI MINGGU */}
           {attendanceStatus.isSunday && (
