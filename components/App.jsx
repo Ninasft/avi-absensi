@@ -434,9 +434,18 @@ const deleteLog = async (logId) => {
 
     pegawais.forEach(p => {
       userSummary[p.nama] = { 
-        hadir: 0, izin: 0, sakit: 0, jamLive: 0, gajiLive: 0, 
-        statusHariIni: 'Belum Absen', clockIn: '--:--', clockOut: '--:--', 
-        keteranganHariIni: '-', logs: []
+        hadir: 0, izin: 0, sakit: 0, 
+        jamLive: 0, gajiLive: 0, 
+        statusHariIni: 'Belum Absen', 
+        statusHariIniLive: 'Belum Absen',
+        clockIn: '--:--', clockOut: '--:--', 
+        clockInLive: '--:--', clockOutLive: '--:--',
+        keteranganHariIni: '-', 
+        keteranganHariIniLive: '-',
+        logs: [],
+        // NEW: Data harian yang sudah digabung per hari
+        dailyRecordsUmum: [],
+        dailyRecordsLive: []
       };
     });
 
@@ -447,12 +456,19 @@ const deleteLog = async (logId) => {
       
       userSummary[log.nama].logs.push(log);
 
-      // Logika Status Hari Ini untuk Admin
-      if (logDateStr === todayStr && log.tipe === 'Umum') {
-        userSummary[log.nama].statusHariIni = log.aksi;
-        if (log.aksi === 'Masuk') userSummary[log.nama].clockIn = log.waktu;
-        if (log.aksi === 'Pulang') userSummary[log.nama].clockOut = log.waktu;
-        if (log.keterangan !== '-') userSummary[log.nama].keteranganHariIni = log.keterangan;
+      // Logika Status Hari Ini untuk Admin (PISAHKAN UMUM DAN LIVE)
+      if (logDateStr === todayStr) {
+        if (log.tipe === 'Umum') {
+          userSummary[log.nama].statusHariIni = log.aksi;
+          if (log.aksi === 'Masuk') userSummary[log.nama].clockIn = log.waktu;
+          if (log.aksi === 'Pulang') userSummary[log.nama].clockOut = log.waktu;
+          if (log.keterangan !== '-') userSummary[log.nama].keteranganHariIni = log.keterangan;
+        } else if (log.tipe === 'Live') {
+          userSummary[log.nama].statusHariIniLive = log.aksi;
+          if (log.aksi === 'Masuk') userSummary[log.nama].clockInLive = log.waktu;
+          if (log.aksi === 'Pulang') userSummary[log.nama].clockOutLive = log.waktu;
+          if (log.keterangan !== '-') userSummary[log.nama].keteranganHariIniLive = log.keterangan;
+        }
       }
 
       if (log.tipe === 'Umum') {
@@ -503,8 +519,60 @@ const deleteLog = async (logId) => {
       }
     });
 
-    return userSummary;
-  }, [logs, filterMonth, appUser]);
+    // NEW: Buat daily records yang digabung per hari
+    pegawais.forEach(p => {
+      const userLogs = filtered.filter(l => l.nama === p.nama);
+      
+      // Group by date dan tipe
+      const dateMapUmum = {};
+      const dateMapLive = {};
+      
+      userLogs.forEach(log => {
+        const dateStr = new Date(log.timestamp).toLocaleDateString('id-ID');
+        
+        if (log.tipe === 'Umum') {
+          if (!dateMapUmum[dateStr]) {
+            dateMapUmum[dateStr] = {
+              tanggal: dateStr,
+              tanggal_display: log.tanggal_display,
+              masuk: null,
+              pulang: null,
+              izin: null,
+              sakit: null,
+              timestamp: log.timestamp
+            };
+          }
+          
+          if (log.aksi === 'Masuk') dateMapUmum[dateStr].masuk = log;
+          if (log.aksi === 'Pulang') dateMapUmum[dateStr].pulang = log;
+          if (log.aksi === 'Izin') dateMapUmum[dateStr].izin = log;
+          if (log.aksi === 'Sakit') dateMapUmum[dateStr].sakit = log;
+        } else if (log.tipe === 'Live') {
+          if (!dateMapLive[dateStr]) {
+            dateMapLive[dateStr] = {
+              tanggal: dateStr,
+              tanggal_display: log.tanggal_display,
+              masuk: null,
+              pulang: null,
+              timestamp: log.timestamp
+            };
+          }
+          
+          if (log.aksi === 'Masuk') dateMapLive[dateStr].masuk = log;
+          if (log.aksi === 'Pulang') dateMapLive[dateStr].pulang = log;
+        }
+      });
+      
+      // Convert to arrays dan sort by date descending
+      userSummary[p.nama].dailyRecordsUmum = Object.values(dateMapUmum)
+        .sort((a, b) => b.timestamp - a.timestamp);
+      
+      userSummary[p.nama].dailyRecordsLive = Object.values(dateMapLive)
+        .sort((a, b) => b.timestamp - a.timestamp);
+      });
+
+      return userSummary; 
+    }, [logs, filterMonth, appUser]);
 
   const totalGajiLiveSemua = Object.values(stats).reduce((a, b) => a + b.gajiLive, 0);
 
@@ -1099,6 +1167,8 @@ const deleteLog = async (logId) => {
                    <div className="p-2 bg-emerald-500 rounded-lg text-white"><Users size={20} /></div>
                    <h3 className="text-xl font-black uppercase tracking-tight">Status Absensi Umum</h3>
                 </div>
+                
+                {/* CARD SUMMARY PEGAWAI UMUM */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                 {daftarPegawai.filter(p => p.akses.includes('Umum')).map(p => {
                     const s = stats[p.nama] || {};
@@ -1107,10 +1177,14 @@ const deleteLog = async (logId) => {
                          <div className="flex justify-between items-start mb-6">
                            <div className="w-12 h-12 bg-orange-500/10 text-orange-500 rounded-2xl flex items-center justify-center font-black text-xl">{p.nama[0]}</div>
                            <div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase ${
-                             s.statusHariIni === 'Hadir' ? 'bg-emerald-100 text-emerald-600' : 
+                             s.statusHariIni === 'Masuk' && s.clockOut !== '--:--' ? 'bg-emerald-100 text-emerald-600' :
+                             s.statusHariIni === 'Masuk' ? 'bg-blue-100 text-blue-600' : 
                              s.statusHariIni === 'Izin' ? 'bg-amber-100 text-amber-600' : 
                              s.statusHariIni === 'Sakit' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
-                           }`}>{s.statusHariIni}</div>
+                           }`}>
+                             {s.statusHariIni === 'Masuk' && s.clockOut !== '--:--' ? 'Hadir' :
+                              s.statusHariIni === 'Masuk' ? 'Sedang Kerja' : s.statusHariIni}
+                           </div>
                          </div>
                          <h4 className="font-black text-lg mb-2">{p.nama}</h4>
                          {s.keteranganHariIni !== '-' && <p className="text-[10px] italic font-bold opacity-60 mb-4 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg">"{s.keteranganHariIni}"</p>}
@@ -1122,29 +1196,23 @@ const deleteLog = async (logId) => {
                                const todayLog = s.logs?.find(l => {
                                  const logDate = new Date(l.timestamp).toLocaleDateString('id-ID');
                                  const today = new Date().toLocaleDateString('id-ID');
-                                 return logDate === today && (l.aksi === 'Izin' || l.aksi === 'Sakit');
+                                 return logDate === today && l.tipe === 'Umum' && (l.aksi === 'Izin' || l.aksi === 'Sakit');
                                });
                                
                                if (!todayLog) return null;
                                
                                if (todayLog.status_approval === 'Disetujui') {
-                                 return <div className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black text-center">✓ DISETUJUI</div>;
+                                 return <div className="text-center py-2 bg-emerald-100 text-emerald-700 rounded-xl text-[10px] font-black">✓ SUDAH DISETUJUI</div>;
+                               }
+                               
+                               if (todayLog.status_approval === 'Ditolak') {
+                                 return <div className="text-center py-2 bg-rose-100 text-rose-700 rounded-xl text-[10px] font-black">✕ DITOLAK</div>;
                                }
                                
                                return (
                                  <div className="grid grid-cols-2 gap-2">
-                                   <button 
-                                     onClick={() => updateStatusLog(todayLog.id, 'Disetujui')} 
-                                     className="px-3 py-2 bg-emerald-500 text-white rounded-lg text-[10px] font-black hover:bg-emerald-600 transition-all"
-                                   >
-                                     ✓ APPROVE
-                                   </button>
-                                   <button 
-                                     onClick={() => deleteLog(todayLog.id)} 
-                                     className="px-3 py-2 bg-rose-500 text-white rounded-lg text-[10px] font-black hover:bg-rose-600 transition-all"
-                                   >
-                                     ✕ REJECT
-                                   </button>
+                                   <button onClick={() => updateStatusLog(todayLog.id, 'Disetujui')} className="py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-black hover:bg-emerald-600">✓ SETUJU</button>
+                                   <button onClick={() => deleteLog(todayLog.id)} className="py-2 bg-rose-500 text-white rounded-xl text-[10px] font-black hover:bg-rose-600">✕ TOLAK</button>
                                  </div>
                                );
                              })()}
@@ -1162,6 +1230,99 @@ const deleteLog = async (logId) => {
                     )
                   })}
                 </div>
+                
+                {/* TABLE DETAIL PER PEGAWAI - UMUM */}
+                <div className="space-y-4">
+                  {daftarPegawai.filter(p => p.akses.includes('Umum')).map(pegawai => {
+                    const s = stats[pegawai.nama] || {};
+                    if (!s.dailyRecordsUmum || s.dailyRecordsUmum.length === 0) return null;
+                    
+                    return (
+                      <div key={pegawai.id} className={`${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} p-6 rounded-[2rem] border-2 shadow-sm`}>
+                        <h3 className="font-black text-lg uppercase mb-4">{pegawai.nama} - Riwayat Umum</h3>
+                        
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="opacity-40 uppercase font-black border-b">
+                                <th className="pb-2">Tanggal</th>
+                                <th className="pb-2">Masuk</th>
+                                <th className="pb-2">Pulang</th>
+                                <th className="pb-2">Status</th>
+                                <th className="pb-2">Keterangan</th>
+                                <th className="pb-2">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.dailyRecordsUmum.map((day, idx) => {
+                                // Tentukan status hari ini
+                                let status = 'Belum Lengkap';
+                                let statusColor = 'bg-slate-100 text-slate-600';
+                                let keterangan = '-';
+                                let pendingLog = null;
+                                
+                                if (day.izin) {
+                                  status = day.izin.status_approval === 'Disetujui' ? 'Izin (Disetujui)' : 
+                                           day.izin.status_approval === 'Ditolak' ? 'Izin (Ditolak)' : 'Izin (Pending)';
+                                  statusColor = day.izin.status_approval === 'Disetujui' ? 'bg-amber-100 text-amber-700' :
+                                                day.izin.status_approval === 'Ditolak' ? 'bg-rose-100 text-rose-700' :
+                                                'bg-amber-50 text-amber-600';
+                                  keterangan = day.izin.keterangan;
+                                  if (!day.izin.status_approval) pendingLog = day.izin;
+                                } else if (day.sakit) {
+                                  status = day.sakit.status_approval === 'Disetujui' ? 'Sakit (Disetujui)' : 
+                                           day.sakit.status_approval === 'Ditolak' ? 'Sakit (Ditolak)' : 'Sakit (Pending)';
+                                  statusColor = day.sakit.status_approval === 'Disetujui' ? 'bg-blue-100 text-blue-700' :
+                                                day.sakit.status_approval === 'Ditolak' ? 'bg-rose-100 text-rose-700' :
+                                                'bg-blue-50 text-blue-600';
+                                  keterangan = day.sakit.keterangan;
+                                  if (!day.sakit.status_approval) pendingLog = day.sakit;
+                                } else if (day.masuk && day.pulang) {
+                                  status = 'Hadir Lengkap';
+                                  statusColor = 'bg-emerald-100 text-emerald-700';
+                                } else if (day.masuk) {
+                                  status = 'Masuk (Belum Pulang)';
+                                  statusColor = 'bg-blue-100 text-blue-600';
+                                }
+                                
+                                return (
+                                  <tr key={idx} className="border-b last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                    <td className="py-3 font-bold">{day.tanggal_display}</td>
+                                    <td className="py-3">{day.masuk ? day.masuk.waktu : '--:--'}</td>
+                                    <td className="py-3">{day.pulang ? day.pulang.waktu : '--:--'}</td>
+                                    <td className="py-3">
+                                      <span className={`px-3 py-1 rounded-full text-[9px] font-black ${statusColor}`}>
+                                        {status}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 text-[10px] italic opacity-60">{keterangan}</td>
+                                    <td className="py-3">
+                                      {pendingLog && (
+                                        <div className="flex gap-2">
+                                          <button 
+                                            onClick={() => updateStatusLog(pendingLog.id, 'Disetujui')} 
+                                            className="px-2 py-1 bg-emerald-500 text-white rounded-lg text-[9px] font-black hover:bg-emerald-600"
+                                          >
+                                            ✓
+                                          </button>
+                                          <button 
+                                            onClick={() => deleteLog(pendingLog.id)} 
+                                            className="px-2 py-1 bg-rose-500 text-white rounded-lg text-[9px] font-black hover:bg-rose-600"
+                                          >
+                                            ✕
+                                          </button>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
 
               {/* SECTION: LIVE SESSION STATUS */}
@@ -1176,6 +1337,8 @@ const deleteLog = async (logId) => {
                      <p className="text-xl font-black">Rp {totalGajiLiveSemua.toLocaleString('id-ID')}</p>
                   </div>
                 </div>
+                
+                {/* CARD SUMMARY PEGAWAI LIVE */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {daftarPegawai.filter(p => p.akses.includes('Live')).map(p => {
                     const s = stats[p.nama] || {};
@@ -1184,7 +1347,21 @@ const deleteLog = async (logId) => {
                          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform"><Video size={100} /></div>
                          <p className="text-[10px] font-black uppercase opacity-40 mb-1">Host Live</p>
                          <h4 className="text-2xl font-black mb-6 uppercase tracking-tight">{p.nama}</h4>
-                         <div className="space-y-3">
+                         
+                         {/* Status Hari Ini Live */}
+                         <div className={`mb-4 px-4 py-2 rounded-xl text-center text-[9px] font-black uppercase ${
+                           s.statusHariIniLive === 'Masuk' && s.clockOutLive !== '--:--' ? 'bg-emerald-100 text-emerald-600' :
+                           s.statusHariIniLive === 'Masuk' ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'
+                         }`}>
+                           {s.statusHariIniLive === 'Masuk' && s.clockOutLive !== '--:--' ? 'LIVE SELESAI' :
+                            s.statusHariIniLive === 'Masuk' ? 'SEDANG LIVE' : 'BELUM LIVE'}
+                         </div>
+                         
+                         <div className="space-y-3 mb-4">
+                            <div className="grid grid-cols-2 gap-2 text-[10px] font-bold">
+                              <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-center"><span className="opacity-40 block mb-1">In</span> {s.clockInLive}</div>
+                              <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-center"><span className="opacity-40 block mb-1">Out</span> {s.clockOutLive}</div>
+                            </div>
                             <div className="flex justify-between items-center p-4 bg-slate-50 dark:bg-slate-800 rounded-2xl">
                                <span className="text-xs font-bold opacity-50">Total Jam</span>
                                <span className="font-black text-lg">{s.jamLive?.toFixed(1) || '0.0'} Jam</span>
@@ -1198,81 +1375,79 @@ const deleteLog = async (logId) => {
                     )
                   })}
                 </div>
+                
+                {/* TABLE DETAIL PER PEGAWAI - LIVE */}
+                <div className="space-y-4">
+                  {daftarPegawai.filter(p => p.akses.includes('Live')).map(pegawai => {
+                    const s = stats[pegawai.nama] || {};
+                    if (!s.dailyRecordsLive || s.dailyRecordsLive.length === 0) return null;
+                    
+                    return (
+                      <div key={pegawai.id} className={`${darkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'} p-6 rounded-[2rem] border-2 shadow-sm`}>
+                        <h3 className="font-black text-lg uppercase mb-4">{pegawai.nama} - Riwayat Live</h3>
+                        
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead>
+                              <tr className="opacity-40 uppercase font-black border-b">
+                                <th className="pb-2">Tanggal</th>
+                                <th className="pb-2">Masuk</th>
+                                <th className="pb-2">Pulang</th>
+                                <th className="pb-2">Durasi</th>
+                                <th className="pb-2">Gaji</th>
+                                <th className="pb-2">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.dailyRecordsLive.map((day, idx) => {
+                                let durasi = '--';
+                                let gaji = '--';
+                                let status = 'Belum Lengkap';
+                                let statusColor = 'bg-slate-100 text-slate-600';
+                                
+                                if (day.masuk && day.pulang) {
+                                  const selisih = day.pulang.timestamp - day.masuk.timestamp;
+                                  const totalMenit = selisih / (1000 * 60);
+                                  const jamMurni = Math.floor(totalMenit / 60);
+                                  const sisaMenit = totalMenit % 60;
+                                  const jamDibulatkan = sisaMenit >= 50 ? jamMurni + 1 : jamMurni;
+                                  
+                                  if (jamDibulatkan > 0) {
+                                    durasi = `${jamDibulatkan} jam`;
+                                    gaji = `Rp ${(jamDibulatkan * 25000).toLocaleString('id-ID')}`;
+                                    status = 'Selesai';
+                                    statusColor = 'bg-emerald-100 text-emerald-700';
+                                  }
+                                } else if (day.masuk) {
+                                  status = 'Sedang Live';
+                                  statusColor = 'bg-blue-100 text-blue-600';
+                                }
+                                
+                                return (
+                                  <tr key={idx} className="border-b last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800">
+                                    <td className="py-3 font-bold">{day.tanggal_display}</td>
+                                    <td className="py-3">{day.masuk ? day.masuk.waktu : '--:--'}</td>
+                                    <td className="py-3">{day.pulang ? day.pulang.waktu : '--:--'}</td>
+                                    <td className="py-3 font-bold text-indigo-600">{durasi}</td>
+                                    <td className="py-3 font-bold text-indigo-600">{gaji}</td>
+                                    <td className="py-3">
+                                      <span className={`px-3 py-1 rounded-full text-[9px] font-black ${statusColor}`}>
+                                        {status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-
-              {/* Tabel Rekap Karyawan */}
-    <div className="grid grid-cols-1 gap-4">
-      {daftarPegawai.map(pegawai => {
-        const s = stats[pegawai.nama] || {};
-        return (
-          <div key={pegawai.id} className="bg-white dark:bg-slate-900 p-6 rounded-[2rem] border-2 shadow-sm">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-black text-lg uppercase">{pegawai.nama}</h3>
-              <div className="flex gap-4 text-[10px] font-black uppercase">
-                <span className="text-emerald-500">Hadir: {s.hadir || 0}</span>
-                <span className="text-amber-500">Izin: {s.izin || 0}</span>
-                <span className="text-blue-500">Sakit: {s.sakit || 0}</span>
               </div>
-            </div>
-
-            {/* Tabel Log per Karyawan */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="opacity-40 uppercase font-black border-b">
-                    <th className="pb-2">Tanggal</th>
-                    <th className="pb-2">Aksi</th>
-                    <th className="pb-2">Status</th>
-                    <th className="pb-2">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.logs?.map((log, idx) => (
-                    <tr key={idx} className="border-b last:border-0">
-                      <td className="py-3 font-bold">{log.tanggal_display}</td>
-                      <td className="py-3 font-black uppercase">{log.aksi}</td>
-                      <td className="py-3">
-                        {log.status_approval || (
-                          log.aksi === 'Masuk' ? 'Berhasil Masuk' : 
-                          log.aksi === 'Pulang' ? 'Berhasil Pulang' : 
-                          'Pending'
-                        )}
-                      </td>
-                      <td className="py-3">
-                        {(log.aksi === 'Izin' || log.aksi === 'Sakit') && !log.status_approval && (
-                          <div className="flex gap-2">
-                            <button 
-                              onClick={() => updateStatusLog(log.id, 'Disetujui')} 
-                              className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-[10px] font-black hover:bg-emerald-600 transition-all"
-                            >
-                              ✓ Approve
-                            </button>
-                            <button 
-                              onClick={() => updateStatusLog(log.id, 'Ditolak')} 
-                              className="px-3 py-1.5 bg-rose-500 text-white rounded-lg text-[10px] font-black hover:bg-rose-600 transition-all"
-                            >
-                              ✕ Reject
-                            </button>
-                          </div>
-                        )}
-                        {(log.aksi === 'Izin' || log.aksi === 'Sakit') && log.status_approval === 'Disetujui' && (
-                          <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black">✓ Disetujui</span>
-                        )}
-                        {(log.aksi === 'Izin' || log.aksi === 'Sakit') && log.status_approval === 'Ditolak' && (
-                          <span className="px-3 py-1.5 bg-rose-100 text-rose-700 rounded-lg text-[10px] font-black">✕ Ditolak</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  </div>
-            
+              </div>
           )}
         </main>
       )}
@@ -1421,8 +1596,7 @@ const deleteLog = async (logId) => {
           {statusMessage.msg}
         </div>
       )}
-
-    </div>
+      </div>
   );
 };
 
