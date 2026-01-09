@@ -196,6 +196,13 @@ const App = () => {
       const parsedUser = JSON.parse(savedUser);
       setAppUser(parsedUser);
       
+      // Set halaman default berdasarkan role
+      if (parsedUser.role === 'admin') {
+        setCurrentPage('history');
+      } else {
+        setCurrentPage('absen');
+      }
+      
       // Set default tab sesuai izin
       if (!parsedUser.bisa_umum && parsedUser.bisa_live) {
         setAbsensiType('Live');
@@ -266,6 +273,13 @@ const App = () => {
         
         // Simpan ke browser agar tidak perlu login ulang saat refresh
         localStorage.setItem('absensi_user', JSON.stringify(user));
+        
+        // Set halaman default berdasarkan role
+        if (user.role === 'admin') {
+          setCurrentPage('history');
+        } else {
+          setCurrentPage('absen');
+        }
         
         // Jika user HANYA bisa Live, otomatis arahkan tipe absen ke Live
         if (!user.bisa_umum && user.bisa_live) {
@@ -463,19 +477,22 @@ const deleteLog = async (logId) => {
           new Date(l.timestamp).toLocaleDateString('id-ID') === logDateStr && 
           l.timestamp > log.timestamp
         );
-        const selisihMilidetik = pair.timestamp - log.timestamp;
-        const totalMenit = selisihMilidetik / (1000 * 60);
-        const jamMurni = Math.floor(totalMenit / 60);
-        const sisaMenit = totalMenit % 60;
+        
+        if (pair) {
+          const selisihMilidetik = pair.timestamp - log.timestamp;
+          const totalMenit = selisihMilidetik / (1000 * 60);
+          const jamMurni = Math.floor(totalMenit / 60);
+          const sisaMenit = totalMenit % 60;
 
-        // LOGIKA PEMBULATAN:
-        // Jika sisa menit >= 30, maka dihitung 1 jam (dibulatkan ke atas)
-        // Jika sisa menit < 30, maka sisa menit dibuang (dibulatkan ke bawah)
-        const jamDibulatkan = sisaMenit >= 50 ? jamMurni + 1 : jamMurni;
+          // LOGIKA PEMBULATAN:
+          // Jika sisa menit >= 30, maka dihitung 1 jam (dibulatkan ke atas)
+          // Jika sisa menit < 30, maka sisa menit dibuang (dibulatkan ke bawah)
+          const jamDibulatkan = sisaMenit >= 50 ? jamMurni + 1 : jamMurni;
 
-        if (jamDibulatkan > 0) {
-          userSummary[log.nama].jamLive += jamDibulatkan;
-          userSummary[log.nama].gajiLive += jamDibulatkan * 25000; 
+          if (jamDibulatkan > 0) {
+            userSummary[log.nama].jamLive += jamDibulatkan;
+            userSummary[log.nama].gajiLive += jamDibulatkan * 25000; 
+          }
         }
       }
     });
@@ -648,49 +665,14 @@ const deleteLog = async (logId) => {
             </div>
           )}
           {/* HALAMAN 1: PROFILE & SETTINGS (Semua Role) */}
-        {currentPage === 'profile' && (
-          <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in">
-            <button 
-              onClick={() => setCurrentPage(appUser.role === 'admin' ? 'history' : 'absen')}
-              className="flex items-center gap-2 font-black uppercase text-[10px] tracking-widest opacity-60 hover:opacity-100 transition-all"
-            >
-              <ChevronRight size={16} className="rotate-180" /> Kembali
-            </button>
-            {renderProfile()}
-          </div>
-        )}
-
+          {/* Konten profile ada di section "PAGE: PROFILE & SECURITY" di bawah */}
+        
         {/* HALAMAN 2: DASHBOARD ABSENSI (Hanya Pegawai) */}
-        {appUser.role === 'pegawai' && currentPage === 'absen' && (
-          <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4">
-            {renderHero()}
-            {renderStats()}
-            {renderAttendanceActions()}
-          </div>
-        )}
+        {/* Konten absensi ada di section "PAGE: ABSENSI (PEGAWAI ONLY)" di bawah */}
 
         {/* HALAMAN 3: MONITORING (Admin) ATAU RIWAYAT (Pegawai) */}
-        {currentPage === 'history' && (
-          <div className="space-y-8 animate-in fade-in">
-            {appUser.role === 'admin' ? (
-              <>
-                <div className="flex justify-between items-end mb-6">
-                  <div>
-                    <h2 className="text-3xl font-black italic tracking-tighter uppercase">Monitoring</h2>
-                    <p className="text-[10px] font-bold opacity-50 tracking-[0.2em] uppercase">Panel Kendali Admin</p>
-                  </div>
-                </div>
-                {renderAdminLogs()}
-                {renderAdminSettings()}
-              </>
-            ) : (
-              <div className="space-y-8">
-                <h2 className="text-3xl font-black italic tracking-tighter uppercase text-center">Riwayat Anda</h2>
-                {renderLogs()}
-              </div>
-            )}
-          </div>
-        )}
+        {/* Konten untuk admin ada di bawah di section "PAGE: ADMIN DASHBOARD" */}
+        {/* Konten untuk pegawai ada di section "PAGE: LOG SAYA" */}
           
           {/* INFO HARI MINGGU */}
           {attendanceStatus.isSunday && (
