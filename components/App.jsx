@@ -30,7 +30,7 @@ const App = () => {
   
   const [appUser, setAppUser] = useState(null);
   const [loginInput, setLoginInput] = useState({ username: '', password: '' });
-  const [currentPage, setCurrentPage] = useState('absen');
+  const [currentPage, setCurrentPage] = useState(appUser?.role === 'admin' ? 'history' : 'absen');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [absensiType, setAbsensiType] = useState('Umum');
   const [logs, setLogs] = useState([]);
@@ -955,7 +955,7 @@ const deleteLog = async (logId) => {
                   </select>
                 </div>
               </div>
-              
+
               
 
               {/* SECTION: ABSENSI UMUM */}
@@ -1217,9 +1217,37 @@ const deleteLog = async (logId) => {
                 <LayoutDashboard size={18} /> <span className="text-[7px] font-black uppercase">Dashboard</span>
              </button>
            )}
-           <button onClick={() => setCurrentPage('profile')} className={`flex-1 py-4 rounded-2xl flex flex-col items-center gap-1 transition-all ${currentPage === 'profile' ? 'bg-orange-500 text-white' : 'text-slate-400'}`}>
-              <Settings size={18} /> <span className="text-[7px] font-black uppercase">Profil</span>
-           </button>
+           <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl gap-1">
+          
+          {/* Tombol Beranda/Absen (Hanya muncul untuk Pegawai) */}
+          {appUser.role === 'pegawai' && (
+            <button 
+              onClick={() => setCurrentPage('absen')}
+              className={`p-2.5 rounded-xl transition-all ${currentPage === 'absen' ? 'bg-orange-500 shadow-lg shadow-orange-500/40' : 'bg-transparent hover:bg-white/5'}`}
+            >
+              <Fingerprint size={20} />
+            </button>
+          )}
+
+          {/* Tombol Monitoring (untuk Admin) atau Riwayat (untuk Pegawai) */}
+          <button 
+            onClick={() => setCurrentPage('history')}
+            className={`p-2.5 rounded-xl transition-all ${currentPage === 'history' ? 'bg-orange-500 shadow-lg shadow-orange-500/40' : 'bg-transparent hover:bg-white/5'}`}
+          >
+            <Activity size={20} />
+          </button>
+
+          {/* Tombol Profile/Settings (Untuk Semua) */}
+          <button 
+            onClick={() => setCurrentPage('profile')}
+            className={`p-2.5 rounded-xl transition-all ${currentPage === 'profile' ? 'bg-orange-500 shadow-lg shadow-orange-500/40' : 'bg-transparent hover:bg-white/5'}`}
+          >
+            <Settings size={20} />
+          </button>
+          
+        </div>
+
+           
         </nav>
       )}
 
