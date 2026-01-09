@@ -415,6 +415,7 @@ const deleteLog = async (logId) => {
   };
 
   const confirmLogout = () => {
+    localStorage.removeItem('absensi_user'); // Fix: Hapus data login
     setAppUser(null);
     setShowLogoutConfirm(false);
     setCurrentPage('absen');
@@ -455,8 +456,13 @@ const deleteLog = async (logId) => {
       }
 
       if (log.tipe === 'Umum') {
-        if (log.aksi === 'Izin') userSummary[log.nama].izin++;
-        if (log.aksi === 'Sakit') userSummary[log.nama].sakit++;
+        // Hanya hitung Izin/Sakit yang sudah disetujui
+        if (log.aksi === 'Izin' && log.status_approval === 'Disetujui') {
+          userSummary[log.nama].izin++;
+        }
+        if (log.aksi === 'Sakit' && log.status_approval === 'Disetujui') {
+          userSummary[log.nama].sakit++;
+        }
         
         if (log.aksi === 'Masuk') {
           const hasPulang = logs.some(l => 
@@ -526,9 +532,18 @@ const deleteLog = async (logId) => {
   const isExcused = !!activeExcuse;
   const excuseStatus = activeExcuse?.status_approval || 'Pending';
 
+  // --- FIX: VALIDASI INCOMPLETE PER TIPE SESSION ---
+  // Cek log terakhir untuk tipe session yang sedang aktif
   const sortedLogs = [...userLogs].sort((a, b) => b.timestamp - a.timestamp);
   const lastLog = sortedLogs[0];
-  const isIncomplete = (lastLog && lastLog.aksi === 'Masuk' && new Date(lastLog.timestamp).toLocaleDateString('id-ID') !== todayStr) ? lastLog : null;
+  
+  // Hanya block jika log terakhir untuk tipe session ini adalah Masuk dan bukan hari ini
+  const isIncomplete = (
+    lastLog && 
+    lastLog.aksi === 'Masuk' && 
+    lastLog.tipe === absensiType && // FIX: Pastikan tipe session sama
+    new Date(lastLog.timestamp).toLocaleDateString('id-ID') !== todayStr
+  ) ? lastLog : null;
 
   // --- LOGIKA PEMBATASAN WAKTU (Tetap Dipertahankan) ---
   let timeMessage = "";
@@ -541,10 +556,14 @@ const deleteLog = async (logId) => {
     } else {
       timeCanIn = true;
     }
+    // Clock out antara jam 16:00 - 22:00 (jam 4 sore - jam 10 malam)
     if (currentHour < 16) {
       timeMessage = hasIn ? "Clock Out UMUM baru bisa dilakukan jam 16:00." : timeMessage;
-    } else {
+    } else if (currentHour >= 16 && currentHour < 22) {
       timeCanOut = true;
+    } else if (currentHour >= 22) {
+      timeMessage = hasIn ? "Clock Out sudah melewati batas waktu maksimal (22:00)." : timeMessage;
+      timeCanOut = false;
     }
   } else if (absensiType === 'Live') {
     if (currentHour < 13) {
@@ -552,10 +571,14 @@ const deleteLog = async (logId) => {
     } else {
       timeCanIn = true;
     }
+    // Clock out antara jam 17:00 - 22:00 (jam 5 sore - jam 10 malam)
     if (currentHour < 17) {
       timeMessage = hasIn ? "Clock Out LIVE baru bisa dilakukan jam 17:00 sore." : timeMessage;
-    } else {
+    } else if (currentHour >= 17 && currentHour < 22) {
       timeCanOut = true;
+    } else if (currentHour >= 22) {
+      timeMessage = hasIn ? "Clock Out sudah melewati batas waktu maksimal (22:00)." : timeMessage;
+      timeCanOut = false;
     }
   }
 
@@ -613,6 +636,26 @@ const deleteLog = async (logId) => {
         </div>
         {appUser && (
           <div className="flex gap-2">
+            {/* Notification Badge untuk Admin */}
+            {appUser.role === 'admin' && (() => {
+              const pendingCount = logs.filter(l => 
+                (l.aksi === 'Izin' || l.aksi === 'Sakit') && 
+                !l.status_approval
+              ).length;
+              return pendingCount > 0 ? (
+                <button 
+                  onClick={() => setCurrentPage('history')}
+                  className="relative p-2.5 bg-amber-500 rounded-xl hover:bg-amber-600 transition-all shadow-lg shadow-amber-500/20 animate-pulse"
+                  title={`${pendingCount} persetujuan pending`}
+                >
+                  <AlertCircle size={20} className="text-white" />
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center">
+                    {pendingCount}
+                  </span>
+                </button>
+              ) : null;
+            })()}
+            
             <button onClick={() => setDarkMode(!darkMode)} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20 transition-all">
               {darkMode ? <Sun size={20} /> : <Moon size={20} />}
             </button>
@@ -982,7 +1025,73 @@ const deleteLog = async (logId) => {
                 </div>
               </div>
 
-              
+              {/* SECTION: PENDING APPROVALS */}
+              {(() => {
+                const pendingApprovals = logs.filter(l => 
+                  (l.aksi === 'Izin' || l.aksi === 'Sakit') && 
+                  !l.status_approval &&
+                  l.bulan_index === parseInt(filterMonth)
+                );
+                
+                if (pendingApprovals.length === 0) return null;
+                
+                return (
+                  <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 md:p-8 rounded-[2.5rem] shadow-2xl text-white">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center animate-pulse">
+                          <AlertCircle size={24} />
+                        </div>
+                        <div>
+                          <h3 className="text-xl font-black uppercase">Menunggu Persetujuan</h3>
+                          <p className="text-xs opacity-80">{pendingApprovals.length} pengajuan izin/sakit belum diproses</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {pendingApprovals.slice(0, 4).map((log, idx) => (
+                        <div key={idx} className="bg-white/10 backdrop-blur-sm p-4 rounded-2xl border border-white/20">
+                          <div className="flex justify-between items-start mb-3">
+                            <div>
+                              <p className="font-black text-lg">{log.nama}</p>
+                              <p className="text-xs opacity-80">{log.tanggal_display}</p>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-[9px] font-black ${
+                              log.aksi === 'Izin' ? 'bg-amber-200 text-amber-900' : 'bg-blue-200 text-blue-900'
+                            }`}>
+                              {log.aksi}
+                            </div>
+                          </div>
+                          {log.keterangan !== '-' && (
+                            <p className="text-xs italic opacity-90 mb-3 bg-white/10 p-2 rounded-lg">"{log.keterangan}"</p>
+                          )}
+                          <div className="grid grid-cols-2 gap-2">
+                            <button 
+                              onClick={() => updateStatusLog(log.id, 'Disetujui')}
+                              className="py-2 px-3 bg-emerald-500 hover:bg-emerald-600 rounded-xl text-xs font-black transition-all"
+                            >
+                              ✓ SETUJU
+                            </button>
+                            <button 
+                              onClick={() => deleteLog(log.id)}
+                              className="py-2 px-3 bg-rose-500 hover:bg-rose-600 rounded-xl text-xs font-black transition-all"
+                            >
+                              ✕ TOLAK
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {pendingApprovals.length > 4 && (
+                      <p className="text-center mt-4 text-xs opacity-80">
+                        +{pendingApprovals.length - 4} pengajuan lainnya (scroll ke bawah untuk melihat semua)
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* SECTION: ABSENSI UMUM */}
               <div className="space-y-6">
@@ -1005,6 +1114,43 @@ const deleteLog = async (logId) => {
                          </div>
                          <h4 className="font-black text-lg mb-2">{p.nama}</h4>
                          {s.keteranganHariIni !== '-' && <p className="text-[10px] italic font-bold opacity-60 mb-4 bg-slate-50 dark:bg-slate-800 p-2 rounded-lg">"{s.keteranganHariIni}"</p>}
+                         
+                         {/* APPROVAL BUTTONS untuk Izin/Sakit Hari Ini */}
+                         {(s.statusHariIni === 'Izin' || s.statusHariIni === 'Sakit') && (
+                           <div className="mb-4">
+                             {(() => {
+                               const todayLog = s.logs?.find(l => {
+                                 const logDate = new Date(l.timestamp).toLocaleDateString('id-ID');
+                                 const today = new Date().toLocaleDateString('id-ID');
+                                 return logDate === today && (l.aksi === 'Izin' || l.aksi === 'Sakit');
+                               });
+                               
+                               if (!todayLog) return null;
+                               
+                               if (todayLog.status_approval === 'Disetujui') {
+                                 return <div className="px-3 py-2 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black text-center">✓ DISETUJUI</div>;
+                               }
+                               
+                               return (
+                                 <div className="grid grid-cols-2 gap-2">
+                                   <button 
+                                     onClick={() => updateStatusLog(todayLog.id, 'Disetujui')} 
+                                     className="px-3 py-2 bg-emerald-500 text-white rounded-lg text-[10px] font-black hover:bg-emerald-600 transition-all"
+                                   >
+                                     ✓ APPROVE
+                                   </button>
+                                   <button 
+                                     onClick={() => deleteLog(todayLog.id)} 
+                                     className="px-3 py-2 bg-rose-500 text-white rounded-lg text-[10px] font-black hover:bg-rose-600 transition-all"
+                                   >
+                                     ✕ REJECT
+                                   </button>
+                                 </div>
+                               );
+                             })()}
+                           </div>
+                         )}
+                         
                          <div className="grid grid-cols-2 gap-2 text-[10px] font-bold">
                            <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-center"><span className="opacity-40 block mb-1">Clock In</span> {s.clockIn}</div>
                            <div className="p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-center"><span className="opacity-40 block mb-1">Clock Out</span> {s.clockOut}</div>
@@ -1086,14 +1232,34 @@ const deleteLog = async (logId) => {
                       <td className="py-3 font-bold">{log.tanggal_display}</td>
                       <td className="py-3 font-black uppercase">{log.aksi}</td>
                       <td className="py-3">
-                        {log.status_approval || (log.aksi === 'Masuk' || log.aksi === 'Pulang' ? 'Auto' : 'Pending')}
+                        {log.status_approval || (
+                          log.aksi === 'Masuk' ? 'Berhasil Masuk' : 
+                          log.aksi === 'Pulang' ? 'Berhasil Pulang' : 
+                          'Pending'
+                        )}
                       </td>
                       <td className="py-3">
                         {(log.aksi === 'Izin' || log.aksi === 'Sakit') && !log.status_approval && (
                           <div className="flex gap-2">
-                            <button onClick={() => updateStatusLog(log.id, 'Disetujui')} className="text-emerald-500 font-bold underline">Approve</button>
-                            <button onClick={() => deleteLog(log.id)} className="text-rose-500 font-bold underline">Batalkan</button>
+                            <button 
+                              onClick={() => updateStatusLog(log.id, 'Disetujui')} 
+                              className="px-3 py-1.5 bg-emerald-500 text-white rounded-lg text-[10px] font-black hover:bg-emerald-600 transition-all"
+                            >
+                              ✓ Approve
+                            </button>
+                            <button 
+                              onClick={() => updateStatusLog(log.id, 'Ditolak')} 
+                              className="px-3 py-1.5 bg-rose-500 text-white rounded-lg text-[10px] font-black hover:bg-rose-600 transition-all"
+                            >
+                              ✕ Reject
+                            </button>
                           </div>
+                        )}
+                        {(log.aksi === 'Izin' || log.aksi === 'Sakit') && log.status_approval === 'Disetujui' && (
+                          <span className="px-3 py-1.5 bg-emerald-100 text-emerald-700 rounded-lg text-[10px] font-black">✓ Disetujui</span>
+                        )}
+                        {(log.aksi === 'Izin' || log.aksi === 'Sakit') && log.status_approval === 'Ditolak' && (
+                          <span className="px-3 py-1.5 bg-rose-100 text-rose-700 rounded-lg text-[10px] font-black">✕ Ditolak</span>
                         )}
                       </td>
                     </tr>
@@ -1199,8 +1365,20 @@ const deleteLog = async (logId) => {
              </button>
            )}
            {appUser.role === 'admin' && (
-             <button onClick={() => setCurrentPage('history')} className={`flex-1 py-4 rounded-2xl flex flex-col items-center gap-1 transition-all ${currentPage === 'history' ? 'bg-orange-500 text-white' : 'text-slate-400'}`}>
-                <LayoutDashboard size={18} /> <span className="text-[7px] font-black uppercase">Dashboard</span>
+             <button onClick={() => setCurrentPage('history')} className={`flex-1 py-4 rounded-2xl flex flex-col items-center gap-1 transition-all relative ${currentPage === 'history' ? 'bg-orange-500 text-white' : 'text-slate-400'}`}>
+                <LayoutDashboard size={18} /> 
+                <span className="text-[7px] font-black uppercase">Dashboard</span>
+                {(() => {
+                  const pendingCount = logs.filter(l => 
+                    (l.aksi === 'Izin' || l.aksi === 'Sakit') && 
+                    !l.status_approval
+                  ).length;
+                  return pendingCount > 0 ? (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center animate-pulse">
+                      {pendingCount}
+                    </span>
+                  ) : null;
+                })()}
              </button>
            )}
            <div className="flex bg-white/5 backdrop-blur-xl p-1.5 rounded-2xl border border-white/10 shadow-2xl gap-1">
