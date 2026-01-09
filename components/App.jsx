@@ -78,6 +78,16 @@ const App = () => {
     ...daftarPegawai.reduce((acc, p) => ({ ...acc, [p.id]: { pass: p.id } }), {}),
     "admin": { pass: "admin123", role: 'admin' }
   };
+  const pushOptimisticLog = (logData) => {
+    setLogs(prev => {
+      const exists = prev.some(l =>
+        l.nama === logData.nama &&
+        l.absensiType === logData.absensiType &&
+        l.timestamp === logData.timestamp
+      );
+      return exists ? prev : [...prev, logData];
+    });
+  };
 
   // ============================================
   // EFFECTS
@@ -247,6 +257,8 @@ const App = () => {
       };
   
       await addAbsensiLog(logData);
+      // Optimistic UI update
+      pushOptimisticLog(logData);
       showStatus(`Berhasil ${action} (${absensiType})`, "success");
       
       // Tutup modal alasan jika ada
